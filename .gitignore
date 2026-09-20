@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+data/
+*.sqlite3
+*.sqlite3-journal
+.env
+api.txt

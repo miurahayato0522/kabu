@@ -112,7 +112,7 @@ def simulate(rows, initial=1_000_000, short=5, long=20, quantity=100, fee=0, sli
         max_drawdown = max(max_drawdown, (peak - value) / peak)
         equity.append({"date": row["Date"], "cash": cash, "shares": shares, "equity": value})
     final = equity[-1]["equity"]
-    return {"symbol": code, "start": rows[0]["Date"], "end": rows[-1]["Date"], "days": len(rows),
+    return {"symbol": code, "data_source": rows[0].get("DataSource", "jquants_v2"), "start": rows[0]["Date"], "end": rows[-1]["Date"], "days": len(rows),
             "parameters": {"initial": initial, "short": short, "long": long, "quantity": quantity,
                            "fee_per_order": fee, "slippage_bps": slippage_bps},
             "input_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(),

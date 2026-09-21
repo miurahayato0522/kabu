@@ -98,8 +98,12 @@ def save_daily(path, code, records):
 
 def load_daily(path, code):
     with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        sources = [r[0] for r in db.execute('SELECT DISTINCT source FROM daily_prices')]
+        if len(sources) > 1 or sources and sources[0] not in ('jquants_v2', 'yahoo_reconstructed_v1'):
+            raise HistoryError('データ取得元が混在または未対応です。取得元ごとにDBを分けてください')
+        source = sources[0] if sources else 'jquants_v2'
         return [json.loads(r[0]) for r in db.execute(
-            "SELECT payload FROM daily_prices WHERE code=? AND source='jquants_v2' ORDER BY day", (code,))]
+            "SELECT payload FROM daily_prices WHERE code=? AND source=? ORDER BY day", (code, source))]
 
 
 def main(argv=None):

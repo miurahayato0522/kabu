@@ -113,6 +113,7 @@ def write_report(report, folder):
     folder.mkdir(parents=True, exist_ok=False)
     (folder / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     lines = ["# 複数銘柄・独立資金のシミュレーション", "",
+             "取得元: " + ", ".join(sorted({item['strategy'].get('data_source', 'jquants_v2') for item in report['results']})), "",
              f"各銘柄 {report['initial_per_symbol']:,.0f}円 × {len(report['requested_symbols'])}銘柄。銘柄間の資金融通なし。", "",
              "新規購入は1回100株が既定、売却は分割後の保有全株です。資金全額を投資する方式ではありません。配当・税金なし、約定は仮定です。",
              "分割・併合は権利落ち日の始値約定前に保有株数を調整し、総取得原価を維持。移動平均は当日までの係数で補正します。", "",

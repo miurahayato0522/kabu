@@ -57,6 +57,30 @@ class AITests(unittest.TestCase):
             self.assertEqual(analyze(db, article, self.names, 'secret', caller=interrupt), 'cached:started')
             interrupt.assert_called_once()
 
+    def test_validation_failure_keeps_diagnostic_and_specific_safe_error(self):
+        response = dict(self.response, output=[{'type': 'message', 'content': [
+            {'type': 'output_text', 'text': json.dumps(dict(self.result, evidence=['存在しない引用']))}]}])
+        with tempfile.TemporaryDirectory() as directory, closing(open_cache(Path(directory) / 'cache.db')) as db:
+            caller = Mock(return_value=response)
+            self.assertEqual(analyze(db, self.article, self.names, 'secret-key', caller=caller), 'failed')
+            error, diagnostic, result = db.execute('SELECT error,diagnostic_json,result_json FROM ai_analyses').fetchone()
+            self.assertIn('入力文章に存在しない根拠', error)
+            self.assertEqual(json.loads(diagnostic)['output'], response['output'])
+            self.assertIsNone(result)
+            self.assertNotIn('secret-key', error + diagnostic)
+            self.assertEqual(analyze(db, self.article, self.names, 'secret-key', caller=caller), 'cached:failed')
+            caller.assert_called_once()
+
+    def test_old_database_migration_preserves_rows(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'cache.db'
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute('CREATE TABLE ai_analyses (request_hash TEXT PRIMARY KEY, article_id TEXT, version TEXT, started_at TEXT, finished_at TEXT, status TEXT, request_json TEXT, source_json TEXT, result_json TEXT, usage_json TEXT, response_id TEXT, response_model TEXT, error TEXT)')
+                db.execute("INSERT INTO ai_analyses (request_hash,status,error) VALUES ('old','failed','original')")
+            with closing(open_cache(path)) as db:
+                self.assertEqual(db.execute('SELECT status,error,diagnostic_json FROM ai_analyses').fetchone(), ('failed','original',None))
+
     def test_invalid_evidence_symbol_and_incomplete_rejected(self):
         for changes in ({'evidence': ['架空の数字']}, {'related_symbols': ['9984']}, {'evidence': []}):
             response = dict(self.response, output=[{'type': 'message', 'content': [

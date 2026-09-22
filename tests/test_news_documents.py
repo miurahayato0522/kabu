@@ -1,4 +1,5 @@
 from contextlib import closing
+import io
 import json
 from pathlib import Path
 import sqlite3
@@ -39,10 +40,10 @@ class BodyTests(unittest.TestCase):
         result = dict(summary='テスト資料の売上予想', category='決算', related_symbols=['7203'],
                       evidence=['売上予想は100億円'], unknowns=[], facts=['売上予想の記載'],
                       relations=[dict(symbol='7203', relation='直接', reason='企業名の明記')],
-                      numbers=[dict(label='売上予想', value='100', unit='億円', period='2026年', quote='2026年の売上予想は100億円')])
+                      numbers=[dict(label='売上予想', value='100', unit='億円', period='2026年', quote='2026年の売上予想は100億円', role='予想', period_quote='2026年の売上予想は100億円')])
         def response():
             return dict(status='completed', output=[dict(type='message', content=[dict(type='output_text', text=json.dumps(result))])])
-        self.assertEqual(parse_response(response(), article, self.names), result)
+        self.assertEqual(parse_response(response(), article, self.names), dict(result, quality_warnings=[]))
         self.assertTrue(make_request(article, self.names)['text']['format']['strict'])
         cache = Path(self.temp.name) / 'ai.db'
         with closing(open_cache(cache)) as db:
@@ -64,7 +65,7 @@ class BodyTests(unittest.TestCase):
         with patch('news_market.indicators', side_effect=ValueError('テスト：日足不足')):
             report = build(cache, prices)
         item = report['items'][0]
-        self.assertEqual(item['analysis_version'], 'body-v1')
+        self.assertEqual(item['analysis_version'], 'body-v3')
         self.assertGreaterEqual(item['decision_at'], article['body_received_at'])
         self.assertFalse(any('旧AI形式' in reason for reason in item['reasons']))
 
@@ -76,6 +77,23 @@ class BodyTests(unittest.TestCase):
             self.assertEqual(main(['preview', '--body', '--documents-db', str(self.path), '--config', str(config)]), 0)
             api.assert_not_called()
             key.assert_not_called()
+
+    def test_missing_empty_and_invalid_database_explain_before_key_prompt(self):
+        config = Path(self.temp.name) / 'names.json'
+        config.write_text(json.dumps({'symbols': self.names}), encoding='utf-8')
+        args = ['run', '--body', '--documents-db', str(self.path), '--config', str(config)]
+        for state, expected in [('missing', '本文DBがありません'), ('invalid', '本文DBを読み取れません'), ('empty', '登録本文が0件')]:
+            if state == 'invalid':
+                with closing(sqlite3.connect(self.path)):
+                    pass
+            elif state == 'empty':
+                with closing(sqlite3.connect(self.path)) as db, db:
+                    db.execute('CREATE TABLE documents (article_id TEXT,payload TEXT,received_at TEXT)')
+            with patch('sys.stdout', new_callable=io.StringIO) as output, patch('news_ai.getpass.getpass') as key, patch('news_ai.analyze') as api:
+                self.assertEqual(main(args), 1)
+                self.assertIn(expected, output.getvalue())
+                key.assert_not_called()
+                api.assert_not_called()
 
 
 if __name__ == '__main__':

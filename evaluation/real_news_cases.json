@@ -1,0 +1,27 @@
+{
+  "version": "real-news-v1",
+  "note": "公式表の必要部分を転記・整形した入力。PDF全文の読み取り評価ではない。期待値はCodex作成の草案であり、人による出典照合は未実施。公表時刻は不明のため登録しない。",
+  "cases": [
+    {
+      "id": "toyota_up_20250205", "symbol": "7203", "title": "トヨタ：2025年3月期の見通し修正（公式表の転記）",
+      "url": "https://global.toyota/pages/global_toyota/ir/financial-results/2025_3q_presentation_jp.pdf",
+      "published_date": "2025-02-05", "location": "PDF 12ページ：連結決算見通し要約の営業利益行。単位は億円。",
+      "body": "トヨタ自動車株式会社。2025年2月5日公表資料の連結決算見通し要約から、営業利益行を転記。対象期間：2024.4-2025.3。単位：億円。営業利益の前回見通しは43,000、今回見通しは47,000。",
+      "expected": {"metric": "営業利益", "period": "2024.4-2025.3", "scope": "連結", "before_yen": "4300000000000", "after_yen": "4700000000000", "delta_yen": "400000000000", "revision_pct": "9.30232558", "change": "増加", "relation": "直接"}
+    },
+    {
+      "id": "nissan_down_20240725", "symbol": "7201", "title": "日産：2024年度通期の見通し修正（公式表の転記）",
+      "url": "https://www.nissan-global.com/JP/IR/FINANCIAL_RESULTS/ASSETS/DATA/2024/20241st_tsefiling_510_j.pdf",
+      "published_date": "2024-07-25", "location": "PDF 2ページ：2024年度通期予想の営業利益行。中国合弁会社は持分法。",
+      "body": "日産自動車株式会社。2024年7月25日公表資料から、連結の営業利益見通しを転記。中国合弁会社には持分法を適用。対象期間：2024年度通期。営業利益の前回見通しは6,000億円、今回見通しは5,000億円。",
+      "expected": {"metric": "営業利益", "period": "2024年度通期", "scope": "連結（中国合弁会社は持分法）", "before_yen": "600000000000", "after_yen": "500000000000", "delta_yen": "-100000000000", "revision_pct": "-16.66666667", "change": "減少", "relation": "直接"}
+    },
+    {
+      "id": "nissan_loss_20251030", "symbol": "7201", "title": "日産：2025年度上期の赤字縮小見通し（公式表の転記）",
+      "url": "https://www.nissan-global.com/JP/IR/NEWS_EVENT/ASSETS/PDF/20251030_FY25Q1_OutlookRev_j.pdf",
+      "published_date": "2025-10-30", "location": "PDF 2ページ：25年度上期の営業利益行。第2四半期だけの列と混同しない。単位は億円。",
+      "body": "日産自動車株式会社。2025年10月30日の業績予想修正資料から、25年度上期の営業利益行を転記。対象期間：25年度上期。単位：億円。営業利益の前回見通しは-1,800、今回見通しは-300。第2四半期だけの見通しではなく上期の数値である。",
+      "expected": {"metric": "営業利益", "period": "25年度上期", "scope": "連結", "before_yen": "-180000000000", "after_yen": "-30000000000", "delta_yen": "150000000000", "revision_pct": null, "change": "赤字縮小", "relation": "直接"}
+    }
+  ]
+}

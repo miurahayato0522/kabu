@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 
 from daily_backtest import positive, split_factor
+from news_numbers import calculate
 from jquants_history import ROOT, HistoryError, symbol_code
 
 JST = timezone(timedelta(hours=9))
@@ -72,8 +73,10 @@ def build(ai_path, prices_path, mode='replay'):
         for symbol in source['symbols']:
             reasons, chart = [], None
             relation = next((r['relation'] for r in result.get('relations', []) if r['symbol'] == symbol), '不明')
-            if analysis['version'] not in ('headline-v2', 'body-v1'):
+            if analysis['version'] not in ('headline-v2', 'body-v1', 'body-v2', 'body-v3'):
                 reasons.append('旧AI形式：企業との直接・間接関係が未評価')
+            if result.get('quality_warnings'):
+                reasons.extend('AI抽出の品質要確認: ' + w for w in result['quality_warnings'])
             if relation != '直接':
                 reasons.append('対象企業への直接の材料と確認できない（AI推定）')
             if source.get('published_at'):
@@ -97,7 +100,8 @@ def build(ai_path, prices_path, mode='replay'):
             items.append({'article_id': analysis['article_id'], 'analysis_hash': analysis['request_hash'],
                           'model': analysis['response_model'], 'analysis_version': analysis['version'],
                           'symbol': symbol, 'title': source['title'], 'source': source,
-                          'ai_result': result, 'decision_at': asof.isoformat(), 'relation': relation,
+                          'ai_result': result, 'number_calculations': calculate(result, source) if 'body' in source else None,
+                          'decision_at': asof.isoformat(), 'relation': relation,
                           'chart': chart, 'decision': '見送り' if reasons else '確認候補',
                           'reasons': reasons or ['直接関連・上向きの価格条件・出来高条件を満たすため資料の内容確認へ'],
                           'limitations': [('登録本文・抜粋のAI抽出。出典・真偽・数値の解釈は未確認' if 'body' in source else '見出しのみ・AI推定の真偽未確認'), '売買指示・株価予測ではない',
@@ -138,6 +142,8 @@ def main(argv=None):
                       '制約: ' + ' / '.join(item['limitations'])]
             for number in result.get('numbers', []):
                 lines += ['数値（AI抽出）: ' + json.dumps(number, ensure_ascii=False)]
+            if item['number_calculations']:
+                lines += ['金額計算（Python・AI抽出を前提）: ' + json.dumps(item['number_calculations'], ensure_ascii=False)]
             if item['chart']:
                 c = item['chart']
                 lines += [f"株価日: {c['price_date']} / 終値 {c['close']:.2f} / MA5 {c['ma5']:.2f} / MA20 {c['ma20']:.2f}",

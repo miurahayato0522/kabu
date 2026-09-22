@@ -13,7 +13,7 @@ DEFAULT_DB = ROOT / 'data/news_documents.sqlite3'
 MAX_CHARS = 12000
 
 
-def register(path, text, title, url, symbols, published_at=None, kind='excerpt'):
+def register(path, text, title, url, symbols, published_at=None, kind='excerpt', metadata=None):
     if not text.strip() or len(text) > MAX_CHARS:
         raise ValueError('本文は1〜12000文字。長い資料は必要箇所を抜粋してください')
     if not title.strip() or len(title) > 2000 or kind not in ('full', 'excerpt'):
@@ -31,6 +31,11 @@ def register(path, text, title, url, symbols, published_at=None, kind='excerpt')
     article = dict(id=hashlib.sha256(url.encode()).hexdigest(), title=title, url=url,
                    symbols=sorted(set(symbols)), published_at=published_at, publisher='',
                    body=text, body_status=kind, source_method='local_text_user_supplied')
+    if metadata:
+        allowed = {'source_method', 'publisher', 'published_date', 'date_quality', 'parser_version'}
+        if set(metadata) - allowed:
+            raise ValueError('未対応の本文メタデータ')
+        article.update(metadata)
     revision = hashlib.sha256(json.dumps(article, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     received = datetime.now(timezone.utc).isoformat()
     article.update(first_seen_at=received, observed_at=received, body_received_at=received,
@@ -69,6 +74,9 @@ def main(argv=None):
         if a.command == 'list':
             for row in snapshot(a.db):
                 print(row['id'][:12], row['body_status'], row['title'], row['body_received_at'])
+                if row.get('source_method') == 'official_html':
+                    print('出典:', row['url'])
+                    print('公表日:', row.get('published_date') or '不明', '/ 公表日時:', row.get('published_at') or '不明', '/ 日付品質:', row.get('date_quality'))
             return 0
         if not all((a.text, a.title, a.url, a.symbols)):
             raise ValueError('--text --title --url --symbols を指定してください')

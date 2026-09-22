@@ -1,0 +1,5 @@
+-r requirements.txt
+-r requirements-ai.txt
+-r requirements-yahoo.txt
+-r requirements-ir.txt
+-r requirements-pdf.txt

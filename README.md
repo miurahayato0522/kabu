@@ -1,5 +1,87 @@
 # kabuステーション 株価収集基盤
 
+## ニュース・仮想売買の継続運転
+
+`python kabu_system.py run --config config/paper.json` を追加しました。初期状態は **DRY_RUN・ネットワーク無効**。設定変更後はRSS定期収集、公式資料取得、予算付き好悪材料解析、価格取得、統合判断、仮想口座更新を1プロセスで実行できます。
+
+```bat
+python -m pip install -r requirements-operations.txt
+python kabu_system.py run --config config/paper.json --once
+python kabu_system.py run-status --config config/paper.json
+```
+
+**実市場の企業行動確認フィードは未接続です。** 確認済みデータがあれば翌日へ持越し、未確認なら停止します。導入、月額500円目安の予算、API有効化、企業行動登録、停止・再開は [継続運転ガイド](docs/CONTINUOUS_OPERATIONS.md) を参照してください。既存のLightGBMとMA戦略は維持しています。
+
+## 統合研究CLI（2026-09追加）
+
+既存コマンドを残したまま、`kabu_system.py` に日足LightGBM・ニュース併用判断・共有資金のバックテスト・保存済みtickによる仮想口座を追加しました。実注文機能はありません。企業行動の照合は確認済みデータの手動登録に対応し、自動取得は未接続です。詳細な実装範囲・制限・評価結果は [開発ロードマップ](docs/DEVELOPMENT_ROADMAP.md) を参照してください。
+
+以下はプロジェクトフォルダで `.venv` を有効にしたWindowsのコマンドです。研究用コマンドは外部APIを呼びません。取得CLIの単独利用も従来どおり可能です。新しい `run` のネットワーク動作は上記ガイドの設定で制御します。
+
+```bat
+python -m pip install -r requirements-ai.txt
+python kabu_system.py normalize --prices-db data/yahoo.sqlite3 --output data/normalized.sqlite3
+python kabu_system.py train --prices-db data/yahoo.sqlite3 --output data/chart_model
+python kabu_system.py evaluate --prices-db data/chart_model/normalized.sqlite3 --model data/chart_model
+python kabu_system.py compare --prices-db data/chart_model/normalized.sqlite3 --model data/chart_model --news-db data/news_ai.sqlite3
+python kabu_system.py predict --prices-db data/yahoo.sqlite3 --model data/chart_model
+```
+
+`train` は新規のモデルフォルダを指定します。既に存在する場合は上書きせず停止するので別名にしてください。既定は `symbols_10.json` の10銘柄、予測対象5営業日。`--symbols 7203 8306`、`--horizon 10` で変更できます。予測値は小数の騰落率（0.01=1%）で、上昇確率や売買利益ではありません。学習・検証・テストを時系列で分割し、将来ラベルの期間重複を除外します。
+
+評価/比較は学習時と同じ銘柄・スナップショットを使います。学習時に `--symbols` を指定した場合、評価時にも同じ指定が必要です。株価DBを更新しても、モデルフォルダの `normalized.sqlite3` から再現できます。新しいデータでの予測は `predict` で別に実行します。
+
+`compare` はMA基準、AチャートAI、Bニュースイベント、C併用を同じ初期資金・期間・コストで計算し、JSON・比較PNG・銘柄別売買PNGを `data/system_日時/` に保存します。Bの予測対象はイベント時点だけです。Aの対象日はニュース有無で減らしません。ニュース解析の完了前には材料を使えないため、最近取得したニュースで過去数年を埋めることはできません。
+
+共有口座の既定は合計1,000万円、1回100株、1銘柄100万円・総投資500万円までです。従来の「100万円×10個の独立口座」とは違います。変更例:
+
+```bat
+python kabu_system.py compare --prices-db data/chart_model/normalized.sqlite3 --model data/chart_model --cash 10000000 --per-symbol-limit 1000000 --total-limit 5000000 --max-holdings 10 --daily-loss-limit 100000 --daily-order-limit 20 --quantity 100 --fee 0 --slippage-bps 5 --spread-bps 0
+```
+
+ニュース併用の学習:
+
+```bat
+python kabu_system.py train --kind combined --news-db data/news_ai.sqlite3 --output data/combined_model
+```
+
+学習に使える独立イベントが足りないと `SKIPPED` と理由を返し、モデルは作りません。初期条件は100件以上ですが、十分な学習品質を保証する数字ではありません。確認済みの収集稼働期間がある場合のみ `--coverage-start` / `--coverage-end` にタイムゾーン付きISO日時を渡せます。未指定では「ニュースが存在しない」と断定せず、情報不足として併用ルールの新規買いを抑制します。Cを学習済み結合モデルへ切り替える際は `compare --combined-model data/combined_model` を追加します（Aと同じ日付境界が必要）。
+
+前向き仮想口座（別ターミナルでkabu価格収集を動かしてから、まず1銘柄で確認）:
+
+```bat
+python kabu_collector.py watch --symbols 7203
+```
+
+別ターミナルで、最新の完了日足を保存した後に実行:
+
+```bat
+python kabu_system.py paper-step --symbols 7203 --ticks-db data/production.sqlite3 --prices-db data/yahoo.sqlite3 --ledger data/system_paper.sqlite3
+python kabu_system.py paper-report --ledger data/system_paper.sqlite3
+```
+
+`--model` 未指定のpaperは従来の5/20クロスです。モデルを使う場合は `--model data/chart_model` を追加し、新しい台帳を指定してください。1回目で候補を保存し、その後の `paper-step` で判断後の新しい価格があれば仮想約定します。この単発コマンドは自動常駐ではありません。市場時刻・受信時刻が60秒超古い場合、日足が直前営業日まで揃っていない場合、通信切断検知時は停止。翌日への持越しには確認済み企業行動DBを `--actions-db` で指定します。未指定で保有を持ち越すと停止します。稼働時間外の古い価格での実行は成功扱いにしません。
+
+手動で新規買いだけを停止（Windows CMD）:
+
+```bat
+type nul > data\STOP_NEW_TRADES
+```
+
+再開時はこの停止用ファイルを手動で削除します。既存のデータベースを消さないでください。売却候補の処理は停止ファイルの対象外です。
+
+ニュースAPI費用の上限を指定する場合は `budget.example.json` を `data/news_budget.json` へコピーし、`daily_usd` と `rates_per_million` に利用モデルの最新の入力/出力単価（USD/100万tokens）を設定して、既存の `news_ai.py run ... --budget-file data/news_budget.json` に渡します。初期設定は予算0・単価未設定で送信できません。実装テストでOpenAIは呼んでいません。
+
+旧CLI互換のため予算指定は任意です。未指定の呼出しには日予算上限がありません。共通設定ファイル/台帳を使うと別キャッシュでもUTC日ごとに送信前見積りを予約し、入力/出力tokensと推定費用を記録します。不明な使用量は予約を保持します。請求額そのものではなく、キャッシュ割引は計算しない保守的見積りです。`preview` はAPI・予算台帳を変更しません。
+
+オフラインテスト:
+
+```bat
+python -m unittest discover -s tests -q
+```
+
+今回の確認済み成果物: `data/system_chart_model_v1`、`data/system_comparison_v1`（ローカルのみ、Git対象外）。これは機能確認の初回研究結果です。モデルの有効性・運用可能性を確認したものではありません。
+
 Python 3.11以降向け。注文機能はありません。API認証、東証の時価・板情報取得、WebSocket配信の保存に対応します。元の証券会社サンプルは変更していません。
 
 ## 最初のセットアップ（PowerShell）

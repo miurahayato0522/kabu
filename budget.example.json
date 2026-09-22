@@ -1,0 +1,6 @@
+{
+  "daily_usd": 0,
+  "ledger": "api_costs.sqlite3",
+  "rates_per_million": {},
+  "note": "Copy into data/news_budget.json. Enter current input/output USD per 1M tokens for each model, e.g. model: [input_rate, output_rate]. Zero budget blocks all uncached requests. No prices are assumed."
+}

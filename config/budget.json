@@ -1,0 +1,8 @@
+{
+  "daily_usd": 0.12,
+  "monthly_jpy": 500,
+  "jpy_per_usd": 150,
+  "ledger": "../data/operations/api_costs.sqlite3",
+  "rates_per_million": {},
+  "note": "Exchange rate is a configurable assumption, not a live rate. Set current positive input/output USD prices per million tokens for the chosen model before enabling analysis. Empty prices block sending."
+}

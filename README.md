@@ -1,10 +1,22 @@
 # kabuステーション 株価収集基盤
 
+## ニュース・仮想売買の継続運転
+
+`python kabu_system.py run --config config/paper.json` を追加しました。初期状態は **DRY_RUN・ネットワーク無効**。設定変更後はRSS定期収集、公式資料取得、予算付き好悪材料解析、価格取得、統合判断、仮想口座更新を1プロセスで実行できます。
+
+```bat
+python -m pip install -r requirements-operations.txt
+python kabu_system.py run --config config/paper.json --once
+python kabu_system.py run-status --config config/paper.json
+```
+
+**実市場の企業行動確認フィードは未接続です。** 確認済みデータがあれば翌日へ持越し、未確認なら停止します。導入、月額500円目安の予算、API有効化、企業行動登録、停止・再開は [継続運転ガイド](docs/CONTINUOUS_OPERATIONS.md) を参照してください。既存のLightGBMとMA戦略は維持しています。
+
 ## 統合研究CLI（2026-09追加）
 
-既存コマンドを残したまま、`kabu_system.py` に日足LightGBM・ニュース併用判断・共有資金のバックテスト・保存済みtickによる仮想口座を追加しました。実注文機能はありません。**持越しの企業行動照合などは未完成**です。詳細な実装範囲・制限・評価結果は [開発ロードマップ](docs/DEVELOPMENT_ROADMAP.md) を参照してください。
+既存コマンドを残したまま、`kabu_system.py` に日足LightGBM・ニュース併用判断・共有資金のバックテスト・保存済みtickによる仮想口座を追加しました。実注文機能はありません。企業行動の照合は確認済みデータの手動登録に対応し、自動取得は未接続です。詳細な実装範囲・制限・評価結果は [開発ロードマップ](docs/DEVELOPMENT_ROADMAP.md) を参照してください。
 
-以下はプロジェクトフォルダで `.venv` を有効にしたWindowsのコマンドです。`kabu_system.py` 自体は外部APIを呼びません。既存の株価・ニュース収集は従来どおり `yahoo_history.py` / `jquants_history.py` / `kabu_collector.py` / `news_collector.py` を使用してください。
+以下はプロジェクトフォルダで `.venv` を有効にしたWindowsのコマンドです。研究用コマンドは外部APIを呼びません。取得CLIの単独利用も従来どおり可能です。新しい `run` のネットワーク動作は上記ガイドの設定で制御します。
 
 ```bat
 python -m pip install -r requirements-ai.txt
@@ -48,7 +60,7 @@ python kabu_system.py paper-step --symbols 7203 --ticks-db data/production.sqlit
 python kabu_system.py paper-report --ledger data/system_paper.sqlite3
 ```
 
-`--model` 未指定のpaperは従来の5/20クロスです。モデルを使う場合は `--model data/chart_model` を追加し、新しい台帳を指定してください。1回目で候補を保存し、その後の `paper-step` で判断後の新しい価格があれば仮想約定します。自動常駐ではありません。市場時刻・受信時刻が60秒超古い場合、日足が直前営業日まで揃っていない場合、通信切断検知時は停止。保有を翌日へ持ち越した場合も当日企業行動照合が未実装のため停止します。稼働時間外の古い価格での実行は成功扱いにしません。
+`--model` 未指定のpaperは従来の5/20クロスです。モデルを使う場合は `--model data/chart_model` を追加し、新しい台帳を指定してください。1回目で候補を保存し、その後の `paper-step` で判断後の新しい価格があれば仮想約定します。この単発コマンドは自動常駐ではありません。市場時刻・受信時刻が60秒超古い場合、日足が直前営業日まで揃っていない場合、通信切断検知時は停止。翌日への持越しには確認済み企業行動DBを `--actions-db` で指定します。未指定で保有を持ち越すと停止します。稼働時間外の古い価格での実行は成功扱いにしません。
 
 手動で新規買いだけを停止（Windows CMD）:
 

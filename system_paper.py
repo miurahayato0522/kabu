@@ -59,7 +59,7 @@ def record_error(path, error):
                    (digest([now,'error',error]),'ERROR',now,encode({'error':error})))
 
 
-def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False):
+def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, actions=None, daily_once=False):
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError('Paper time requires timezone')
@@ -83,11 +83,15 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False):
     config = dict(strategy=strategy.name, source=bars[0].source, symbols=sorted(groups),
                   initial=account.initial, limits=__import__('dataclasses').asdict(account.limits),
                   fee=account.fee, slippage_bps=account.slippage_bps, spread_bps=account.spread_bps)
-    config['news_coverage'] = getattr(getattr(strategy,'news',None),'coverage',None)
+    news = getattr(strategy,'news',None)
+    config['news_coverage'] = getattr(news,'coverage_policy',getattr(news,'coverage',None))
+    if daily_once:
+        config['daily_once'] = True
     with closing(ledger(path)) as db:
         db.execute('BEGIN IMMEDIATE')
         stored = db.execute("SELECT payload FROM system_state WHERE key='account'").fetchone()
         pending, previous_equity, previous_day = [], account.initial, None
+        decision_keys, consumed_events, opened = set(), set(), {}
         if stored:
             state = json.loads(stored[0])
             if state['config'] != config:
@@ -96,13 +100,21 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False):
                 setattr(account,key,value)
             account.sent = {tuple(v) for v in state['sent']}
             pending = state['pending']
+            decision_keys=set(state.get('decision_keys',[]))
+            consumed_events=set(state.get('consumed_events',[]))
+            opened=state.get('opened',{})
             previous_equity, previous_day = state['equity'], account.day
             if stamp(state['at']) >= now:
                 raise ValueError('Paper time must advance')
-        # Current-day splits are not known from prior daily bars or raw ticks.
-        # Never value an overnight position across an unverified corporate action.
-        if previous_day and previous_day != today and any(account.positions.values()):
-            raise ValueError('Overnight paper holdings require corporate-action reconciliation (not implemented)')
+        applied=[]
+        if actions is not None:
+            for symbol in sorted(groups):
+                confirmations=actions.between(symbol,previous_day or prior,today,now)
+                for confirmation in confirmations:
+                    account.split(symbol,confirmation['factor'],confirmation['day'])
+                    applied.append(confirmation)
+        elif previous_day and previous_day != today and any(account.positions.values()):
+            raise ValueError('Overnight paper holdings require confirmed corporate-action data')
         marks = {s:q['price'] for s,q in quotes.items()}
         account.start_day(today, previous_equity)
         old_orders, old_fills = len(account.orders), len(account.fills)
@@ -122,20 +134,42 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False):
                 continue
             p = strategy.predict(histories[s], now.isoformat())
             d = decide(p, account.positions.get(s,0))
+            event_refs=sorted(r for r in p.refs if r.startswith('event:'))
+            key=digest([s,histories[s][-1].day,strategy.name,event_refs,p.direction,p.error])
+            if daily_once and key in decision_keys:
+                continue
+            decision_keys.add(key)
+            if daily_once and event_refs and d['action'] in ('BUY','SELL'):
+                event_keys={s+':'+d['action']+':'+ref for ref in event_refs}
+                if event_keys & consumed_events:
+                    d['action']='HOLD' if account.positions.get(s,0) else 'NO_TRADE'
+                    d['prediction']['reasons'].append('Same news event already used; duplicate candidate suppressed')
+                else:
+                    consumed_events.update(event_keys)
             decisions.append(d)
             if d['action'] in ('BUY','SELL'):
                 keep.append(d)
         value = account.equity(marks)
+        for f in account.fills[old_fills:]:
+            if f['side']=='BUY':
+                opened.setdefault(f['symbol'],f['at'])
+            elif not account.positions.get(f['symbol']):
+                opened.pop(f['symbol'],None)
+        holdings={s:dict(quantity=q,cost=account.costs[s],average_cost=account.costs[s]/q,
+                        price=marks[s],unrealized=q*marks[s]-account.costs[s],
+                        opened_at=opened.get(s),valued_at=now.isoformat()) for s,q in account.positions.items() if q}
         record = dict(at=now.isoformat(), mode='forward_saved_ticks_simulation', decisions=decisions,
             orders=account.orders[old_orders:], fills=account.fills[old_fills:], pending=keep,
             cash=account.cash, positions=account.positions, equity=value,
             realized=account.realized, unrealized=value-account.cash-sum(account.costs.values()),
             quote_refs=quotes, news_and_model_available_at=now.isoformat(),
+            holdings=holdings,corporate_actions=applied,
             limitations=['No spread/orderbook liquidity simulation beyond configured costs',
-                         'No overnight corporate-action reconciliation; stops if holding across sessions'])
+                         'Corporate actions require explicit evidence; missing/unsupported actions stop the account'])
         attrs = {k:v for k,v in vars(account).items() if k not in ('limits','sent')}
         state = dict(config=config, account=attrs, sent=sorted(account.sent), pending=keep,
-                     equity=value, at=now.isoformat())
+                     equity=value, at=now.isoformat(),decision_keys=sorted(decision_keys),
+                     consumed_events=sorted(consumed_events),opened=opened)
         db.execute('INSERT INTO system_events VALUES (?,?,?,?)',
                    (digest(record),'STEP',now.isoformat(),encode(record)))
         db.execute("INSERT OR REPLACE INTO system_state VALUES ('account',?)",(encode(state),))

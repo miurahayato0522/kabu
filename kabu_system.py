@@ -1,4 +1,4 @@
-"""Integrated OFFLINE research CLI. Existing collection/analysis CLIs stay available."""
+"""Research and opt-in continuous paper operations CLI; no live order support."""
 import argparse
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -38,7 +38,10 @@ def news_store(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report'])
+    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status'])
+    p.add_argument('--config',type=Path,default=ROOT/'config/paper.json')
+    p.add_argument('--once',action='store_true',help='自動運転を1巡だけ実行')
+    p.add_argument('--actions-db',type=Path,help='確認済み企業行動の台帳')
     p.add_argument('--prices-db',type=Path,default=ROOT/'data/yahoo.sqlite3')
     p.add_argument('--symbols',nargs='+')
     p.add_argument('--model',type=Path)
@@ -66,6 +69,18 @@ def main(argv=None):
     p.add_argument('--stop-file',type=Path,default=ROOT/'data/STOP_NEW_TRADES')
     args = p.parse_args(argv)
     try:
+        if args.command=='run':
+            from system_runtime import run_config
+            run_config(args.config,args.once)
+            return 0
+        if args.command=='run-status':
+            from system_runtime import read_config,connect
+            from contextlib import closing
+            c=read_config(args.config)
+            with closing(connect(c['paths']['runtime'])) as db:
+                print(encode({'jobs':db.execute('SELECT * FROM jobs').fetchall(),
+                              'logs':db.execute('SELECT at,job,status,detail FROM logs ORDER BY id DESC LIMIT 20').fetchall()}))
+            return 0
         if args.command=='paper-report':
             from system_paper import report
             events=report(args.ledger)
@@ -115,7 +130,9 @@ def main(argv=None):
                 raise ValueError('Forward paper currently supports --quantity 100 only')
             strategy=IntegratedStrategy(chart,news) if args.news_db else chart
             account=Account(args.cash,limits,args.fee,args.slippage_bps,args.spread_bps)
-            print(encode(step(args.ledger,bars,args.ticks_db,strategy,account,stop_new=args.stop_file.exists())))
+            from corporate_actions import ConfirmedActions
+            print(encode(step(args.ledger,bars,args.ticks_db,strategy,account,stop_new=args.stop_file.exists(),
+                              actions=ConfirmedActions(args.actions_db) if args.actions_db else None)))
             return 0
         start=chart.metadata['boundaries']['test_start']
         end=chart.metadata['ranges']['test'][1]

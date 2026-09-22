@@ -1,0 +1,41 @@
+{
+  "mode": "paper",
+  "dry_run": true,
+  "network_enabled": false,
+  "base_dir": "..",
+  "symbols": {"7203":"トヨタ自動車","8306":"三菱UFJ","6758":"ソニー","6501":"日立","8058":"三菱商事","7201":"日産","4502":"武田薬品","2914":"日本たばこ","9432":"NTT","9984":"ソフトバンクグループ"},
+  "topics": [
+    {"id":"boj","scope":"market","query":"日銀 金融政策 政策金利"},
+    {"id":"usa","scope":"market","query":"米国 雇用統計 CPI FRB"},
+    {"id":"fx","scope":"market","query":"為替 円相場 原油 資源価格"},
+    {"id":"semiconductor","scope":"industry","query":"半導体 AI 輸出規制"},
+    {"id":"energy","scope":"industry","query":"エネルギー 政策 発電"}
+  ],
+  "market_keywords": ["日銀","政策金利","FRB","雇用統計","CPI","為替","原油","輸出規制","増資","事業提携"],
+  "intervals": {"news":900,"analysis":900,"prices":60,"daily":21600,"paper":60,"documents":3600},
+  "trading_hours": [["09:00","11:30"],["12:30","15:30"]],
+  "llm": "gpt-5-mini",
+  "analysis_limit": 3,
+  "budget_file": "config/budget.json",
+  "refresh_yahoo": true,
+  "history_start": "2024-06-27",
+  "official_documents": [],
+  "chart": {"strategy":"ma","model":null,"threshold":0},
+  "integration": {"no_news":"allow_chart","unknown":"block_buy","negative":"veto_buy","severe_negative":"sell","allow_indirect":false},
+  "initial_cash": 10000000,
+  "risk": {"per_symbol":1000000,"total":5000000,"holdings":10,"daily_loss":100000,"orders_per_day":20,"stop_new":false},
+  "costs": {"fee":0,"slippage_bps":5,"spread_bps":0},
+  "paths": {
+    "runtime":"data/operations/runtime.sqlite3",
+    "news":"data/operations/news.sqlite3",
+    "ai":"data/operations/news_ai.sqlite3",
+    "documents":"data/operations/documents.sqlite3",
+    "html_archive":"data/operations/html.sqlite3",
+    "pdf_archive":"data/operations/pdf.sqlite3",
+    "prices":"data/operations/yahoo.sqlite3",
+    "ticks":"data/operations/ticks.sqlite3",
+    "actions":"data/operations/actions.sqlite3",
+    "ledger":"data/operations/paper.sqlite3",
+    "stop_new":"data/operations/STOP_NEW_TRADES"
+  }
+}

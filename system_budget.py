@@ -13,9 +13,13 @@ class BudgetError(ValueError):
 
 
 class DailyBudget:
-    def __init__(self, config_path):
+    def __init__(self, config_path, clock=None):
         config_path = Path(config_path)
         self.config = json.loads(config_path.read_text(encoding='utf-8'))
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        if 'monthly_jpy' in self.config:
+            if not math.isfinite(self.config['monthly_jpy']) or self.config['monthly_jpy']<0 or not math.isfinite(self.config.get('jpy_per_usd',0)) or self.config.get('jpy_per_usd',0)<=0:
+                raise ValueError('Invalid monthly JPY budget or exchange rate')
         self.path = config_path.parent / self.config['ledger']
         if self.path.resolve() == config_path.resolve():
             raise ValueError('Budget ledger must be separate')
@@ -37,7 +41,7 @@ class DailyBudget:
         input_bound = len(encode(payload).encode('utf-8'))+4096
         output_bound = payload['max_output_tokens']
         amount = (input_bound*rates[0]+output_bound*rates[1])/1e6
-        day = datetime.now(timezone.utc).date().isoformat()
+        day = self.clock().astimezone(timezone.utc).date().isoformat()
         with closing(sqlite3.connect(self.path)) as db:
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT 1 FROM api_costs WHERE id=?',(request_id,)).fetchone():
@@ -47,6 +51,10 @@ class DailyBudget:
             if used+amount > self.config['daily_usd']:
                 db.rollback()
                 raise BudgetError('日次API見積り予算を超えるため送信しません')
+            monthly = db.execute('SELECT coalesce(sum(coalesce(actual,reserved)),0) FROM api_costs WHERE substr(day,1,7)=?',(day[:7],)).fetchone()[0]
+            if 'monthly_jpy' in self.config and monthly+amount > self.config['monthly_jpy']/self.config['jpy_per_usd']:
+                db.rollback()
+                raise BudgetError('月次API見積り予算を超えるため送信しません。収集は継続します')
             db.execute('INSERT INTO api_costs VALUES (?,?,?,?,?)',
                        (request_id,day,amount,None,encode(dict(model=payload['model'],rates=rates,input_bound=input_bound,output_bound=output_bound))))
             db.commit()

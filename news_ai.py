@@ -131,7 +131,14 @@ def make_request(article, names, model=MODEL):
         relations.update(minItems=len(codes), maxItems=len(codes))
         relations['items']['properties']['symbol']['enum'] = codes
         schema['properties']['related_symbols']['items']['enum'] = codes
-    return {'model': model, 'store': False, 'instructions': BODY_INSTRUCTIONS if body is not None else INSTRUCTIONS,
+    instructions = BODY_INSTRUCTIONS if body is not None else INSTRUCTIONS
+    if article.get('analyze_impact'):
+        from news_sentiment import schema as impact_schema, PROMPT, CATEGORIES
+        schema['properties']['impacts'] = impact_schema(sorted(set(article['symbols']) & set(names)))
+        schema['required'].append('impacts')
+        schema['properties']['category']['enum'] += CATEGORIES
+        instructions = instructions.replace('好悪材料、株価予測', '株価予測') + PROMPT
+    return {'model': model, 'store': False, 'instructions': instructions,
             'input': [{'role': 'user', 'content': encode(data)}],
             'reasoning': {'effort': 'minimal'}, 'max_output_tokens': 3500 if body is not None else 2000,
             'text': {'format': {'type': 'json_schema', 'name': 'body_analysis' if body is not None else 'headline_analysis',
@@ -179,13 +186,25 @@ def parse_response(response, article, names):
                 if part.get('type') == 'output_text':
                     texts.append(part['text'])
     result = json.loads(''.join(texts))
+    impact = None
+    if article.get('analyze_impact'):
+        from news_sentiment import validate
+        if not isinstance(result,dict) or 'impacts' not in result:
+            raise AnalysisValidationError('好悪分類がありません')
+        try:
+            impact = validate(result.pop('impacts'), sorted(set(article['symbols']) & set(names)),
+                              article.get('body') or headline(article))
+        except ValueError as exc:
+            raise AnalysisValidationError(str(exc)) from None
     is_body = 'body' in article
     schema = BODY_SCHEMA if is_body else SCHEMA
     if not isinstance(result, dict) or set(result) != set(schema['required']):
         raise AnalysisValidationError('分析結果の項目が不正')
     if not isinstance(result['summary'], str) or not result['summary'].strip():
         raise AnalysisValidationError('要約が空または不正')
-    if result['category'] not in SCHEMA['properties']['category']['enum']:
+    from news_sentiment import CATEGORIES
+    categories=SCHEMA['properties']['category']['enum']+(CATEGORIES if article.get('analyze_impact') else [])
+    if result['category'] not in categories:
         raise AnalysisValidationError('分類が不正')
     for field in ('related_symbols', 'evidence', 'unknowns', 'facts'):
         if not isinstance(result[field], list) or any(not isinstance(v, str) or not v.strip() for v in result[field]):
@@ -236,6 +255,9 @@ def parse_response(response, article, names):
                   or number['period'] not in number['period_quote']):
                 raise AnalysisValidationError('本文に存在しない期間根拠')
         result['quality_warnings'] = body_quality_warnings(result, evidence_source)
+    if impact is not None:
+        result['impacts'] = impact
+        result['impact_basis'] = 'LLM分類・業績/事業環境への影響。株価予測ではない'
     return result
 
 
@@ -256,7 +278,7 @@ def open_cache(path):
 
 def analyze(db, article, names, key, model=MODEL, caller=call_openai, budget=None):
     payload = make_request(article, names, model)
-    version = BODY_VERSION if 'body' in article else VERSION
+    version = ('body-v4-impact' if 'body' in article else 'headline-v3-impact') if article.get('analyze_impact') else (BODY_VERSION if 'body' in article else VERSION)
     identity = {'version': version, 'article_id': article['id'], 'payload': payload}
     if 'body' in article:
         identity['document_revision'] = article.get('document_revision')
@@ -314,6 +336,8 @@ def show_results(path):
                 value = json.loads(result)
                 print('分類:', value['category'], '/ 銘柄:', ', '.join(value['related_symbols']))
                 print('要約:', value['summary'])
+                for impact in value.get('impacts',[]):
+                    print('好悪材料（LLM推定）:',encode(impact))
                 for fact in value.get('facts', []):
                     print('本文に記載:' if version.startswith('body-') else '見出しに記載:', fact)
                 for number in value.get('numbers', []):
@@ -341,6 +365,7 @@ def main(argv=None):
     parser.add_argument('--body', action='store_true', help='登録した本文を分析（OpenAIに本文を送信）')
     parser.add_argument('--documents-db', type=Path, default=ROOT / 'data/news_documents.sqlite3')
     parser.add_argument('--budget-file', type=Path, help='共通日次予算・モデル単価のJSON設定（任意、USD）')
+    parser.add_argument('--impact', action='store_true', help='企業業績への好悪材料分類を追加（新解析形式）')
     args = parser.parse_args(argv)
     try:
         if not 1 <= args.limit <= 20:
@@ -373,11 +398,14 @@ def main(argv=None):
             candidates = [r for r in build_report(snapshot(args.db), names, args.symbol)['items'] if r['decision'] == '確認候補']
         candidates.sort(key=lambda r: (r['observed_at'], r['id']), reverse=True)
         selected = candidates[:args.limit]
+        if args.impact:
+            selected = [dict(r,analyze_impact=True) for r in selected]
         for row in selected:
             make_request(row, names, args.model)
             print(f"[{','.join(row['symbols'])}] {row['title']}")
         print(f'{len(selected)}件 / {args.model} / {"登録本文・抜粋" if args.body else "見出しのみ"}・検索なし・注文なし')
-        print(f'分析形式: {BODY_VERSION if args.body else VERSION}（モデル・形式変更後は過去の記事も新規分析・課金対象）')
+        analysis_version=('body-v4-impact' if args.body else 'headline-v3-impact') if args.impact else (BODY_VERSION if args.body else VERSION)
+        print(f'分析形式: {analysis_version}（モデル・形式変更後は過去の記事も新規分析・課金対象）')
         if args.command == 'preview' or not selected:
             print('API通信・課金なし。runで表示対象を分析します。')
             return 0

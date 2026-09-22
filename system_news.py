@@ -15,7 +15,7 @@ class NewsStore:
         # not a claim that every news source was captured. Default is unknown.
         self.coverage = coverage
         if coverage:
-            if stamp(coverage[0]) >= stamp(coverage[1]):
+            if stamp(coverage[0]) > stamp(coverage[1]):
                 raise ValueError('Invalid news coverage interval')
         if path:
             with closing(readonly(path)) as db:
@@ -108,3 +108,41 @@ class NewsStore:
             output.append(dict(r, features={**r['features'], **features}, news_event_ids=ids,
                                news_feature_version=VERSION))
         return output
+
+    def assessment(self, symbol, at, allow_indirect=False):
+        """Business sentiment for rule integration; does not change model features."""
+        when, code = stamp(at), symbol[:4]
+        latest = {}
+        for item in self.items:
+            if code not in item['source'].get('symbols',[]):
+                continue
+            if not item['first_seen_at'] or stamp(item['first_seen_at'])>when or stamp(item['started_at'])>when:
+                continue
+            if (when-stamp(item['first_seen_at'])).total_seconds()<=7*86400:
+                latest[item['news_id']]=item
+        coverage = bool(self.coverage and stamp(self.coverage[0])<=when<=stamp(self.coverage[1]))
+        pending, events = not coverage, {}
+        for item in latest.values():
+            if item['status']!='ok' or not item['available_at'] or stamp(item['available_at'])>when:
+                pending=True
+                continue
+            if not 0 <= (when-stamp(item['published_at'])).total_seconds() <= 7*86400:
+                continue
+            if item['quality']:
+                pending=True
+                continue
+            relations=[r['relation'] for r in item['result'].get('relations',[]) if r['symbol']==code]
+            if not any(r in (('直接','間接') if allow_indirect else ('直接',)) for r in relations):
+                continue
+            impact=next((i for i in item['result'].get('impacts',[]) if i['symbol']==code),None)
+            if impact is None:
+                pending=True  # Old results retained, not silently assigned a sentiment.
+                continue
+            events.setdefault(item['event_id'],dict(impact, event_id=item['event_id'],analysis_id=item['analysis_id']))
+        directions={e['short_term'] for e in events.values()}
+        if '不明' in directions:
+            pending=True
+        status='UNKNOWN' if pending else ('NONE' if not events else 'AVAILABLE')
+        return dict(status=status,events=list(events.values()),
+                    positive='ポジティブ' in directions,negative='ネガティブ' in directions,
+                    severe_negative=any(e['short_term']=='ネガティブ' and e['importance']=='高' for e in events.values()))

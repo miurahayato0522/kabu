@@ -15,6 +15,7 @@ import urllib.request
 
 from news_collector import ROOT, DEFAULT_DB
 from news_triage import snapshot, build_report, RULES
+from system_budget import BudgetError
 
 MODEL = 'gpt-5-nano'
 VERSION = 'headline-v2'
@@ -253,13 +254,18 @@ def open_cache(path):
     return db
 
 
-def analyze(db, article, names, key, model=MODEL, caller=call_openai):
+def analyze(db, article, names, key, model=MODEL, caller=call_openai, budget=None):
     payload = make_request(article, names, model)
     version = BODY_VERSION if 'body' in article else VERSION
     identity = {'version': version, 'article_id': article['id'], 'payload': payload}
     if 'body' in article:
         identity['document_revision'] = article.get('document_revision')
     fingerprint = hashlib.sha256(encode(identity).encode()).hexdigest()
+    existing = db.execute('SELECT status FROM ai_analyses WHERE request_hash=?', (fingerprint,)).fetchone()
+    if existing:
+        return 'cached:' + existing[0]
+    if budget is not None:
+        budget.reserve(fingerprint, payload)
     with db:
         inserted = db.execute('''INSERT OR IGNORE INTO ai_analyses
             (request_hash,article_id,version,started_at,status,request_json,source_json)
@@ -283,6 +289,8 @@ def analyze(db, article, names, key, model=MODEL, caller=call_openai):
         error = '未完了・拒否・形式または根拠の検証エラー。自動再試行なし。'
     if not isinstance(response, dict):
         response = {}
+    if budget is not None:
+        budget.settle(fingerprint, payload, response.get('usage'))
     with db:
         db.execute('''UPDATE ai_analyses SET finished_at=?,status=?,result_json=?,usage_json=?,
             response_id=?,response_model=?,error=?,diagnostic_json=? WHERE request_hash=?''',
@@ -332,6 +340,7 @@ def main(argv=None):
     parser.add_argument('--symbol')
     parser.add_argument('--body', action='store_true', help='登録した本文を分析（OpenAIに本文を送信）')
     parser.add_argument('--documents-db', type=Path, default=ROOT / 'data/news_documents.sqlite3')
+    parser.add_argument('--budget-file', type=Path, help='共通日次予算・モデル単価のJSON設定（任意、USD）')
     args = parser.parse_args(argv)
     try:
         if not 1 <= args.limit <= 20:
@@ -372,13 +381,18 @@ def main(argv=None):
         if args.command == 'preview' or not selected:
             print('API通信・課金なし。runで表示対象を分析します。')
             return 0
+        budget = None
+        if args.budget_file:
+            from system_budget import DailyBudget
+            budget = DailyBudget(args.budget_file)
+            budget.rates(args.model)
         key = os.environ.get('OPENAI_API_KEY') or getpass.getpass('OpenAI APIキー（非表示・保存なし）: ')
         key = key.strip()
         if not key or not key.isascii() or any(c.isspace() for c in key):
             raise ValueError('APIキーが空または不正です')
         with closing(open_cache(args.cache)) as db:
             for article in selected:
-                status = analyze(db, article, names, key, args.model)
+                status = analyze(db, article, names, key, args.model, budget=budget)
                 print(article['id'][:12], status, flush=True)
                 if status in ('failed', 'cached:failed', 'cached:started'):
                     print('失敗したため残りの送信を停止しました。listで詳細を確認してください。')
@@ -386,6 +400,9 @@ def main(argv=None):
         print('保存先:', args.cache.resolve())
         print('news_ai.py list で分析結果を確認できます。')
         return 0
+    except BudgetError as exc:
+        print('停止:',str(exc))
+        return 1
     except (OSError, sqlite3.Error, ValueError, KeyError, EOFError):
         print('停止: 入力・ファイル・DBを確認してください。APIキーや応答全文は表示しません。')
         return 1

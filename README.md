@@ -1,5 +1,17 @@
 # kabuステーション 株価収集基盤
 
+## 時間外の翌営業日レポート
+
+保存済み日足・ニュース・仮想口座から、翌営業日の候補をHTML/JSONに固定保存します。外部API通信・課金・注文はありません。
+
+```bat
+python kabu_system.py evening-report --config config/paper.json
+python kabu_system.py analysis-preview --config config/paper.json
+python kabu_system.py run-status --config config/paper.json
+```
+
+表示されたHTMLをブラウザで開いてください。MA/保存済みLightGBM、休場日、解析待ち、企業行動による停止理由に対応します。日足不足は保留し、5営業日予測を翌日予測として扱いません。自動生成・市場ニュース検索・Windows操作は [時間外分析ガイド](docs/EVENING_REPORTS.md) を参照してください。
+
 ## ニュース・仮想売買の継続運転
 
 `python kabu_system.py run --config config/paper.json` を追加しました。初期状態は **DRY_RUN・ネットワーク無効**。設定変更後はRSS定期収集、公式資料取得、予算付き好悪材料解析、価格取得、統合判断、仮想口座更新を1プロセスで実行できます。

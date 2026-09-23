@@ -1,5 +1,24 @@
 # 統合開発の実装状況
 
+## 時間外分析・運用改善（2026-09-23）
+
+開始コミットは最新main `559e57e`（前回の継続運転PRマージ済み）。専用ブランチ `codex/evening-analysis`。利用者の `config/paper.json` の通信有効化変更を保持し、開発コミットには含めません。
+
+|ファイル|追加・変更|
+|---|---|
+|`system_evening.py`, `kabu_system.py`|保存済みデータによる翌営業日のMA/LightGBM・ニュース併用候補、固定HTML/JSON、入力スナップショット、任意の自動生成|
+|`system_status.py`|読取専用の稼働状態、JST、予算・待ち件数・保有損益・企業行動等の停止理由・RSS検索別成否|
+|`system_queue.py`|公表/初回取得時刻による期限、優先順位、除外理由、送信前件数と予算見積り|
+|`system_runtime.py`, `news_collector.py`|市場検索の完全一致問題修正、複数検索、空結果/失敗分離、終了後の当日足更新、ハートビート|
+|`system_plot.py`|終値・MA・仮想約定・保有株数の保存グラフ|
+|`tests/test_evening.py`, `tests/test_operations.py`|15件追加と、旧fixtureの日時・オフライン指定を更新。テストの削除なし|
+
+既存のLightGBM・特徴量・学習・MA・リスク・企業行動の安全条件は維持。保存済み10銘柄から2026-09-24向けレポート（日足対象2026-09-18）を生成しました。公開Webサーバーはありません。
+
+検証: `python -m unittest discover -s tests -q` は **129件成功（既存114件＋新規15件）**。MAと保存済み `data/system_chart_model_v1` の両方でレポート生成を確認しました。
+
+外部APIを必要としないテストを基本とし、有料API・実注文は未実行です。旧テストがローカルの通信有効化設定に依存してRSS取得を試みる問題も見つかり、試験の通信設定を明示固定しました。修正後の実RSS取得件数、長期運転・収益性、企業行動自動取得は未検証/未接続です。詳しい操作と制約は [時間外分析ガイド](EVENING_REPORTS.md) を参照。
+
 ## 継続運転機能の追加（2026-09-22）
 
 開始コミット: `906cacbcc3fd296e56fd3bfce8a3105583d34381`。作業ブランチ: `codex/continuous-paper-operations`。

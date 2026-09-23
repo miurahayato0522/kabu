@@ -38,7 +38,7 @@ def news_store(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status'])
+    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status','evening-report','analysis-preview'])
     p.add_argument('--config',type=Path,default=ROOT/'config/paper.json')
     p.add_argument('--once',action='store_true',help='自動運転を1巡だけ実行')
     p.add_argument('--actions-db',type=Path,help='確認済み企業行動の台帳')
@@ -74,12 +74,25 @@ def main(argv=None):
             run_config(args.config,args.once)
             return 0
         if args.command=='run-status':
-            from system_runtime import read_config,connect
-            from contextlib import closing
+            from system_runtime import read_config
+            from system_status import snapshot,display
             c=read_config(args.config)
-            with closing(connect(c['paths']['runtime'])) as db:
-                print(encode({'jobs':db.execute('SELECT * FROM jobs').fetchall(),
-                              'logs':db.execute('SELECT at,job,status,detail FROM logs ORDER BY id DESC LIMIT 20').fetchall()}))
+            print(display(snapshot(c,datetime.now(timezone.utc))))
+            return 0
+        if args.command=='analysis-preview':
+            from system_runtime import read_config
+            from system_queue import preview
+            print(encode(preview(read_config(args.config),datetime.now(timezone.utc))))
+            return 0
+        if args.command=='evening-report':
+            from system_runtime import read_config
+            from system_evening import save
+            c=read_config(args.config)
+            if args.model:c['chart']=dict(strategy='lightgbm',model=str(args.model.resolve()),threshold=args.threshold)
+            folder,result=save(c,folder=args.output)
+            print(f"分析対象: {result['analysis_day']} / 翌営業日: {result['next_session']}")
+            print(f"HTML: {folder.resolve() / 'report.html'}")
+            print(f"JSON: {folder.resolve() / 'report.json'}")
             return 0
         if args.command=='paper-report':
             from system_paper import report

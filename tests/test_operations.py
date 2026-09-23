@@ -182,10 +182,12 @@ class OperationTests(unittest.TestCase):
     def test_dry_run_never_invokes_llm_or_network_and_lock_released(self):
         with tempfile.TemporaryDirectory() as tmp:
             c=read_config(Path(__file__).resolve().parents[1]/'config/paper.json')
+            c['network_enabled']=False;c['dry_run']=True
             c['paths']={k:str(Path(tmp)/(k+'.db')) for k in c['paths']}
             caller=Mock(side_effect=AssertionError('network must not run'))
             now=lambda:stamp('2025-01-06T20:00:00+09:00')
             article=dict(id='fixture',title='トヨタ 営業利益予想を上方修正',symbols=['7203'],analyze_impact=True)
+            article.update(published_at=now().isoformat(),first_seen_at=now().isoformat())
             with patch('news_collector.fetch',caller),patch('news_ai.call_openai',caller),patch('system_runtime.candidates',return_value=[article]):
                 Runtime(c,clock=now).cycle()
             caller.assert_not_called()
@@ -206,6 +208,7 @@ class OperationTests(unittest.TestCase):
             Path(c['budget_file']).write_text(encode(dict(ledger='cost.db',daily_usd=1,monthly_jpy=500,jpy_per_usd=150,rates_per_million={c['llm']:[1,1]})),encoding='utf-8')
             now=[stamp('2025-01-06T20:00:00+09:00')]
             article=dict(id='fixture',title='トヨタ 営業利益予想を上方修正',symbols=['7203'],analyze_impact=True)
+            article.update(published_at=now[0].isoformat(),first_seen_at=now[0].isoformat())
             caller=Mock(side_effect=APIError('HTTP 429'))
             collected=Mock()
             hooks=dict(news=lambda r,d:collected(),daily=lambda r,d:None,documents=lambda r,d:None,llm=caller)

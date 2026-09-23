@@ -116,6 +116,23 @@
 
 口座レポートJSONには判断・注文・約定・保有・現金・実現/含み損益・コストを保存。前向きSQLiteは `system_state` と追記専用 `system_events` を持ちます。同じ台帳でモデル/設定の変更は拒否します。エラー/停止はERRORイベントです。DB・記事本文・学習モデル・秘密情報はGitへ追加しません。
 
+## 産業ニュース探索の追加（2026-09-23）
+
+出典・登録時刻付き企業DB、産業イベント→ローカル企業探索→個別影響の2段階解析、予算/キャッシュ、候補専用保存、チャート予測を改変しない研究用統合、翌営業日HTML/JSON、1/5/20営業日の観測ラベルを追加しました。短中長期ごとの保存済みチャートモデル・研究用リスク設定も選択できます。新候補の自動売買対象化は行いません。
+
+Windowsの初回実行は次の順です。詳細は[関連銘柄探索ガイド](INDUSTRY_DISCOVERY.md)。
+
+```bat
+.\.venv\Scripts\python.exe news_discovery.py companies-import --file config/companies_sample.json
+.\.venv\Scripts\python.exe news_discovery.py run --dry-run
+.\.venv\Scripts\python.exe kabu_system.py evening-report --config config/paper.json
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests -q
+```
+
+次の段階は、企業事業データの出典確認と拡充、実資料の人手評価、取得時刻付き前向きニュース蓄積、指数データ整備、中長期材料の失効管理です。その後に未知銘柄・未知期間で評価し、ニュース専用モデル学習や継続仮想売買への接続を検討します。現状の初期データや架空テストだけから収益性を判断しません。
+
+今回の全テストは151件成功（既存129＋追加22）。保存済みニュースの課金なし実行で269件の記事×銘柄候補を保存し、全件pending・発注不可を確認しました。既存のLightGBM、MA、仮想口座、リスク制御、レポートの回帰テストも含みます。
+
 ## 残課題（運用前に必要）
 
 1. 日中に株価収集を継続し、取得と分析の稼働範囲を監視・記録する。現状の前向き口座は1回ずつ手動実行する初期版です。

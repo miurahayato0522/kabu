@@ -1,0 +1,167 @@
+[
+  {
+    "symbol": "2914",
+    "name": "日本たばこ産業",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "4502",
+    "name": "武田薬品工業",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "6501",
+    "name": "日立製作所",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "6758",
+    "name": "ソニーグループ",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "7201",
+    "name": "日産自動車",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "7203",
+    "name": "トヨタ自動車",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "8015",
+    "name": "豊田通商",
+    "aliases": [],
+    "industry": "資源関連（事業分類）",
+    "business": "公表資料でナミビアのレアアース探査事業への参画を確認。日本近海の採掘権を示すものではない。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": [
+      {
+        "topic": "rare_earth",
+        "role": "探査・開発",
+        "business": "公表資料でナミビアのレアアース探査事業への参画を確認。日本近海の採掘権を示すものではない。",
+        "state": "確認済み",
+        "direct_business": "あり",
+        "source": "https://prtimes.jp/main/html/rd/p/000000061.000000769.html",
+        "quote": "共同開発事業者として参画",
+        "verified_at": "2026-09-23T13:05:17+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      },
+      {
+        "topic": "rare_earth",
+        "role": "精製",
+        "business": "発表資料はレアアース精錬事業の知見に言及。売上比率は未確認。",
+        "state": "確認済み",
+        "direct_business": "あり",
+        "source": "https://prtimes.jp/main/html/rd/p/000000061.000000769.html",
+        "quote": "レアアース精錬事業",
+        "verified_at": "2026-09-23T13:05:17+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "8035",
+    "name": "東京エレクトロン",
+    "aliases": [],
+    "industry": "半導体製造装置",
+    "business": "半導体製造装置を主要事業とする。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": [
+      {
+        "topic": "semiconductor",
+        "role": "装置供給",
+        "business": "半導体製造装置を主要事業とする。",
+        "state": "確認済み",
+        "direct_business": "あり",
+        "source": "https://www.tel.co.jp/about/summary/",
+        "quote": "半導体製造装置事業",
+        "verified_at": "2026-09-23T13:05:17+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "8058",
+    "name": "三菱商事",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "8306",
+    "name": "三菱UFJフィナンシャル・グループ",
+    "aliases": [
+      "三菱UFJ"
+    ],
+    "industry": "金融",
+    "business": "銀行等のグループ会社を持つ総合金融グループ。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": [
+      {
+        "topic": "banking",
+        "role": "金融",
+        "business": "銀行等のグループ会社を持つ総合金融グループ。",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "source": "https://www.mufg.jp/profile/biz_and_network/group/index.html",
+        "quote": "三菱UFJ銀行",
+        "verified_at": "2026-09-23T13:05:17+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "9432",
+    "name": "日本電信電話",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  },
+  {
+    "symbol": "9984",
+    "name": "ソフトバンクグループ",
+    "aliases": [],
+    "industry": "不明（未登録）",
+    "business": "未登録。監視リストの企業名だけを登録。",
+    "updated_at": "2026-09-23T13:05:17+00:00",
+    "relations": []
+  }
+]

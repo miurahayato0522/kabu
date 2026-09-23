@@ -112,8 +112,14 @@ def build(c,now=None):
     known=[i for i in news.items if i['available_at'] and stamp(i['available_at'])<=now and i['status']=='ok']
     source=dict(bars=inputs,news=known,articles=articles,configuration=c,
                 account_snapshot=status['account'],queue_snapshot=status['queue'],jobs_snapshot=status['jobs'])
+    from discovery_integration import report_rows
+    try:discovered=report_rows(c,now)
+    except (OSError,ValueError,KeyError,sqlite3.Error):
+        discovered=[];status['warnings'].append('関連銘柄DB/設定を確認してください。発見結果は利用不可')
+    source['discovery']=discovered
     return dict(version='evening-v1',at=now.isoformat(),at_jst=now.astimezone(JST).isoformat(),
         analysis_day=day,next_session=calendar['next_session'],status=status,results=results,
+        discovered_companies=discovered,
         input_hash=digest(source),inputs=source,
         limitations=['研究用の翌営業日候補。実注文・仮想注文の予約ではありません',
                     '16時JSTを確定足利用の保守的な境界とします。配信元の完全性は保証しません',
@@ -140,6 +146,18 @@ def html(report):
             ('<img alt="終値・移動平均と仮想約定" src="'+e(r['symbol'])+'.png">' if r.get('chart_image') else '')+
             '<h3>翌営業日の確認事項</h3>'+pretty(r['checks'])+'</section>')
     s=report['status'];a=s['account']
+    discovery_cards=[]
+    for r in report.get('discovered_companies',[]):
+        impact=r['impact'].get('result') or {};event=r['event'].get('result') or {}
+        chart=r.get('chart_prediction') or {}
+        discovery_cards.append('<section><h3>'+e(r['company']['name'])+' '+e(r['symbol'])+' — '+e(r['final_state'])+'</h3>'+
+            '<p>'+('既存監視銘柄' if r['watched'] else '新たな分析候補（監視対象には未追加）')+'</p>'+
+            '<p>'+e(r['article']['title'])+'<br>出典: '+e(r['article']['url'])+' / 公表: '+e(r['article'].get('published_at'))+'</p>'+
+            '<p>産業: '+e([x['topic'] for x in event.get('industries',[])])+' / '+e(r['relation'])+' / 関係: '+e(r['relation_state'])+'</p>'+
+            '<p>短期 '+e(impact.get('short','解析待ち'))+' / 中期 '+e(impact.get('medium','解析待ち'))+' / 長期 '+e(impact.get('long','解析待ち'))+'</p>'+
+            '<p>チャート予測: '+e(chart.get('value'))+' / 対象 '+e(chart.get('horizon'))+'営業日。ニュースの好悪は上昇確率ではありません。</p>'+
+            '<p>'+e(r['project_participation'])+'</p>'+pretty(r['checks'])+
+            '<details><summary>企業情報・出典・影響根拠・統合判断</summary>'+pretty(dict(company=r['company'],event=event,impact=impact,periods=r['periods'],integrated=r['integrated_decision'],news_only=r['news_only_decision']))+'</details></section>')
     def number(value):return f'{value:,.0f}' if isinstance(value,(int,float)) else '未確認'
     metrics=''.join('<div class="metric"><small>'+e(label)+'</small><strong>'+e(number(value))+'</strong></div>' for label,value in [
         ('仮想資産（円）',a.get('equity')),('現金（円）',a.get('cash')),('実現損益（円）',a.get('realized')),
@@ -158,7 +176,7 @@ def html(report):
         '<h1>翌営業日向け分析 — '+e(report['next_session'])+'</h1><p>分析: '+e(report['at_jst'])+' / 日足対象: '+e(report['analysis_day'])+'</p>'+\
         '<p>研究用候補・注文なし。保存済み結果の表示であり、再計算しません。</p>'+\
         '<details><summary>RSS検索別の取得状態（正常0件と失敗）</summary>'+pretty(s['rss_queries'])+'</details>'+\
-        summary+''.join(cards)+pretty(report['limitations'])+'</html>'
+        summary+''.join(cards)+'<h2>ニュースから発見した関連銘柄（研究用）</h2>'+(''.join(discovery_cards) or '<p>保存済みの発見候補はありません。news_discovery.pyで企業情報の登録と候補探索を実行してください。</p>')+pretty(report['limitations'])+'</html>'
 
 
 def save(c,now=None,folder=None):

@@ -1,5 +1,19 @@
 # kabuステーション 株価収集基盤
 
+## 経済・産業ニュースから関連銘柄を探索
+
+企業情報の出典付きDB、産業→企業の2段階解析、MA/LightGBMとの研究用統合、翌営業日レポートへの表示を追加しました。新発見銘柄は分析候補のみで、自動的に売買対象へ追加しません。
+
+```bat
+.\.venv\Scripts\python.exe news_discovery.py companies-import --file config/companies_sample.json
+.\.venv\Scripts\python.exe news_discovery.py preview
+.\.venv\Scripts\python.exe news_discovery.py run --dry-run
+.\.venv\Scripts\python.exe news_discovery.py list
+.\.venv\Scripts\python.exe kabu_system.py evening-report --config config/paper.json
+```
+
+上記は有料API通信なし。dry-runで保存されるのは未解析候補です。初期企業12社のうち出典付き事業関係は3社で、残りは未登録です。設定・出典・有料解析を後日開始する条件・検証コマンドは[関連銘柄探索ガイド](docs/INDUSTRY_DISCOVERY.md)を参照してください。
+
 ## 時間外の翌営業日レポート
 
 保存済み日足・ニュース・仮想口座から、翌営業日の候補をHTML/JSONに固定保存します。外部API通信・課金・注文はありません。

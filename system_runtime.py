@@ -48,6 +48,10 @@ def read_config(path):
     if c['chart'].get('model'):
         c['chart']['model']=str((base/c['chart']['model']).resolve())
     c['budget_file']=str((base/c['budget_file']).resolve())
+    if c.get('discovery'):
+        c['_base_dir']=str(base)
+        from news_discovery import settings
+        settings(c)
     return c
 
 
@@ -303,6 +307,11 @@ class Runtime:
                     elif name=='prices': self.price_job()
                     elif name=='analysis': self.analysis_job(db)
                     elif name=='paper': self.paper_job(db)
+                    if name=='analysis' and self.c.get('discovery',{}).get('enabled',False):
+                        from news_discovery import process
+                        discovery=process(self.c,self.clock(),caller=self.hooks.get('discovery_llm'),clock=self.clock)
+                        self.log(db,'discovery','DRY_RUN' if self.c['dry_run'] else 'completed',
+                                 f"candidates={discovery['candidates']} api_calls={discovery['api_calls']}")
                     status,detail='ok','completed'
                 except Exception as exc:
                     status,detail='failed',type(exc).__name__

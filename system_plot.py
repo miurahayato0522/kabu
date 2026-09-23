@@ -4,6 +4,27 @@ from pathlib import Path
 from plot_backtest import drawdown
 
 
+def render_evening(result, fills, folder):
+    """Saved close/MA chart with historical paper fills, no inference on reopening."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    points=result['points']
+    fig,ax=plt.subplots(figsize=(10,4),constrained_layout=True)
+    dates=[datetime.fromisoformat(p['day']) for p in points]
+    for key in ('close','ma5','ma20'):
+        ax.plot(dates,[p[key] for p in points],label=key)
+    for side,marker in [('BUY','^'),('SELL','v')]:
+        selected=[f for f in fills if f['symbol']==result['symbol'] and f['side']==side
+                  and points[0]['day']<=f['at'][:10]<=points[-1]['day']]
+        ax.scatter([datetime.fromisoformat(f['at']).replace(tzinfo=None) for f in selected],
+                   [f['price'] for f in selected],marker=marker,label=side)
+    ax.set_title(result['symbol']+' / held '+str(result['held'])+' shares / raw price units')
+    ax.grid(alpha=.2);ax.legend()
+    fig.savefig(Path(folder)/(result['symbol']+'.png'),dpi=110)
+    plt.close(fig)
+
+
 def render(reports, bars, folder):
     import matplotlib
     matplotlib.use('Agg')

@@ -21,9 +21,9 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def feed_url(name):
+def feed_url(name, exact=True):
     return 'https://news.google.com/rss/search?' + urllib.parse.urlencode(
-        {'q': f'"{name}" when:7d', 'hl': 'ja', 'gl': 'JP', 'ceid': 'JP:ja'})
+        {'q': (f'"{name}"' if exact else f'({name})')+' when:7d', 'hl': 'ja', 'gl': 'JP', 'ceid': 'JP:ja'})
 
 
 def fetch(url):
@@ -119,9 +119,11 @@ def collect(path, symbols, fetcher=fetch, sleep=time.sleep):
         for index, (symbol, name) in enumerate(symbols.items()):
             if index:
                 sleep(2)
-            started, url = now(), feed_url(name)
+            started, url = now(), feed_url(name, exact=not symbol.startswith('@'))
             try:
                 articles, rejected = parse_feed(fetcher(url))
+                if rejected:
+                    raise ValueError('RSSに不正な項目があります。完全な空結果として扱いません')
                 observed = now()
                 with db:
                     inserted = save(db, articles, symbol, name, observed)

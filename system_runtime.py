@@ -28,6 +28,15 @@ def read_config(path):
         raise ValueError('Analysis limit must be 1..20')
     if c['chart']['strategy'] not in ('ma','lightgbm'):
         raise ValueError('Unsupported chart strategy')
+    if type(c.get('evening_report',False)) is not bool:
+        raise ValueError('evening_report must be a boolean')
+    age=c.get('analysis_max_age_hours',24)
+    if type(age) not in (int,float) or not 0<age<=168:
+        raise ValueError('analysis_max_age_hours must be >0 and <=168')
+    for topic in c['topics']:
+        queries=topic.get('queries',[topic.get('query')])
+        if topic.get('scope') not in ('market','industry') or not topic.get('id') or not isinstance(queries,list) or not queries or not all(isinstance(q,str) and q.strip() for q in queries):
+            raise ValueError('Each topic needs scope/id and nonempty queries or query')
     base=(path.parent/c.get('base_dir','..')).resolve()
     for k,value in c['paths'].items():
         c['paths'][k]=str((base/value).resolve())
@@ -67,6 +76,7 @@ def connect(path):
     db.executescript('''CREATE TABLE IF NOT EXISTS jobs(name TEXT PRIMARY KEY,next_at TEXT,status TEXT,finished_at TEXT);
         CREATE TABLE IF NOT EXISTS logs(id INTEGER PRIMARY KEY,at TEXT,job TEXT,status TEXT,detail TEXT);
         CREATE TABLE IF NOT EXISTS analysis_queue(id TEXT PRIMARY KEY,payload TEXT,status TEXT,updated_at TEXT);
+        CREATE TABLE IF NOT EXISTS queue_exclusions(id TEXT PRIMARY KEY,reason TEXT,at TEXT);
         CREATE TABLE IF NOT EXISTS document_jobs(url TEXT PRIMARY KEY,status TEXT);
         CREATE TABLE IF NOT EXISTS runtime_meta(key TEXT PRIMARY KEY,value TEXT);''')
     db.commit()
@@ -77,7 +87,12 @@ def collect_topics(c):
     from news_collector import collect,connect as news_connect
     queries=dict(c['symbols'])
     for topic in c['topics']:
-        queries['@'+topic['scope']+':'+topic['id']]=topic['query']
+        # Legacy space-separated keyword lists were incorrectly quoted as one phrase.
+        terms=topic.get('queries') or [' OR '.join(topic['query'].split())]
+        if not isinstance(terms,list) or not all(isinstance(q,str) and q.strip() for q in terms):
+            raise ValueError('Topic queries must be a nonempty list of searches')
+        for i,query in enumerate(terms):
+            queries['@'+topic['scope']+':'+topic['id']+':'+str(i)]=query
     with closing(news_connect(c['paths']['news'])) as db,db:
         db.execute('CREATE TABLE IF NOT EXISTS query_scopes(query_key TEXT PRIMARY KEY,scope TEXT,query TEXT)')
         for key,q in queries.items():
@@ -162,12 +177,14 @@ class Runtime:
             return
         from yahoo_history import fetch_frame,convert,save
         from jquants_history import symbol_code
-        day=self.clock().astimezone(JST).date()
+        local=self.clock().astimezone(JST)
+        day=local.date()
+        end=day+timedelta(days=1) if local.hour>=16 else day
         start=datetime.fromisoformat(self.c['history_start']).date()
         for symbol in self.c['symbols']:
             code=symbol_code(symbol)
             frame=fetch_frame(code,start,day)
-            rows=convert(frame,code,start,day)
+            rows=convert(frame,code,start,end)
             save(Path(self.c['paths']['prices']),code,rows)
 
     def document_job(self,db):
@@ -191,16 +208,9 @@ class Runtime:
 
     def analysis_job(self,db):
         from news_ai import analyze,open_cache,call_openai
+        from system_queue import refresh_queue
         selected=candidates(self.c,self.clock())
-        current=[]
-        for article in selected:
-            ident=digest([article['title'],article.get('body'),article.get('published_at'),article['symbols'],self.c['llm'],'impact-v1'])
-            current.append(ident)
-            db.execute('INSERT OR IGNORE INTO analysis_queue VALUES (?,?,?,?)',
-                       (ident,encode(article),'pending',self.clock().isoformat()))
-        db.commit()
-        queued=[(i,db.execute('SELECT payload,status FROM analysis_queue WHERE id=?',(i,)).fetchone()) for i in current]
-        pending=[(i,row[0]) for i,row in queued if row[1]=='pending']
+        pending=refresh_queue(db,selected,self.c,self.clock())
         if self.c['dry_run'] or not self.c['network_enabled']:
             self.log(db,'analysis','DRY_RUN',f'{len(pending)} pending; paid API not called')
             return
@@ -236,7 +246,10 @@ class Runtime:
         if not price_health or price_health[0]!='ok' or not price_health[1] or (now-stamp(price_health[1])).total_seconds()>self.c['intervals']['prices']*2:
             raise ValueError('Price collection failed/missing/stale; paper account paused')
         last=db.execute("SELECT status,finished_at FROM jobs WHERE name='news'").fetchone()
-        pending=db.execute("SELECT count(*) FROM analysis_queue WHERE status!='ok' AND updated_at>=?",
+        pending=db.execute("""SELECT count(*) FROM analysis_queue q WHERE
+            (status NOT IN ('ok','excluded') OR (status='excluded' AND NOT EXISTS
+            (SELECT 1 FROM queue_exclusions e WHERE e.id=q.id AND e.reason IN ('old_published_at','old_first_seen_at'))))
+            AND updated_at>=?""",
                            ((now-timedelta(days=7)).isoformat(),)).fetchone()[0]
         healthy=bool(last and last[0]=='ok' and last[1] and (now-stamp(last[1])).total_seconds()<=self.c['intervals']['news']*2 and not pending)
         coverage=[last[1],now.isoformat()] if healthy else None
@@ -260,16 +273,23 @@ class Runtime:
             if old and old[0]!=configuration:
                 db.execute('UPDATE jobs SET next_at=?',(self.clock().isoformat(),))
             db.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('config_hash',?)",(configuration,));db.commit()
+            heartbeat=db.execute("SELECT value FROM runtime_meta WHERE key='heartbeat'").fetchone()
+            if not heartbeat or (self.clock()-stamp(heartbeat[0])).total_seconds()>=30:
+                db.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('heartbeat',?)",(self.clock().isoformat(),));db.commit()
             for name in ('news','documents','daily','prices','analysis','paper'):
                 now=self.clock()
                 row=db.execute('SELECT next_at FROM jobs WHERE name=?',(name,)).fetchone()
-                if row and stamp(row[0])>now:
+                local=now.astimezone(JST)
+                evening_daily=(name=='daily' and local.hour>=16 and db.execute("SELECT value FROM runtime_meta WHERE key='evening_daily_attempt'").fetchone()!=(str(local.date()),))
+                if row and stamp(row[0])>now and not evening_daily:
                     continue
                 if name in ('prices','paper') and not self.trading_time(now):
                     continue
                 interval=self.c['intervals'][name]
                 db.execute('INSERT OR REPLACE INTO jobs VALUES (?,?,?,?)',
                            (name,(now+timedelta(seconds=interval)).isoformat(),'started',None));db.commit()
+                if evening_daily:
+                    db.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('evening_daily_attempt',?)",(str(local.date()),));db.commit()
                 try:
                     if name in self.hooks:
                         self.hooks[name](self,db)
@@ -297,7 +317,12 @@ class Runtime:
                         from system_paper import record_error
                         record_error(self.c['paths']['ledger'],detail)
                 db.execute('UPDATE jobs SET status=?,finished_at=? WHERE name=?',(status,self.clock().isoformat(),name))
+                if name=='daily' and status=='ok' and self.c['network_enabled'] and local.hour>=16:
+                    db.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('evening_daily',?)",(str(local.date()),))
                 self.log(db,name,status,detail)
+            if self.c.get('evening_report',False):
+                from system_evening import auto_report
+                auto_report(self.c,db,self.clock())
 
 
 def run_config(path,once=False):

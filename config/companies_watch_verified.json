@@ -1,0 +1,221 @@
+[
+  {
+    "symbol": "7203",
+    "name": "トヨタ自動車",
+    "aliases": [
+      "トヨタ"
+    ],
+    "industry": "輸送用機器",
+    "business": "自動車の生産・販売",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "export_manufacturing",
+        "role": "製造",
+        "business": "自動車の生産・販売",
+        "source": "https://global.toyota/jp/company/profile/overview/",
+        "quote": "自動車の生産・販売",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "7201",
+    "name": "日産自動車",
+    "aliases": [
+      "日産"
+    ],
+    "industry": "輸送用機器",
+    "business": "自動車の製造、販売および関連事業（2024年報告書。最新の事業変更は別途確認）",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "export_manufacturing",
+        "role": "製造",
+        "business": "自動車の製造、販売および関連事業（2024年報告書。最新の事業変更は別途確認）",
+        "source": "https://www2.nissan-global.com/JP/IR/INTEGRATED_REPORT/ASSETS/PDF/IR24_J_All.pdf",
+        "quote": "自動車の製造、販売および関連事業",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "6758",
+    "name": "ソニーグループ",
+    "aliases": [],
+    "industry": "電気機器",
+    "business": "多角事業のうちイメージセンサーを登録。グループ事業であり親会社単独の製造を断定しない（2024年報告書）",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "semiconductor",
+        "role": "製造",
+        "business": "多角事業のうちイメージセンサーを登録。グループ事業であり親会社単独の製造を断定しない（2024年報告書）",
+        "source": "https://www.sony.com/ja/SonyInfo/IR/library/corporatereport/CorporateReport2024/read/",
+        "quote": "車載用イメージセンサー",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "6501",
+    "name": "日立製作所",
+    "aliases": [],
+    "industry": "電気機器",
+    "business": "多角事業のうちAIを活用するデジタルサービスを登録。個別案件の受注関係は不明",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "ai",
+        "role": "その他",
+        "business": "多角事業のうちAIを活用するデジタルサービスを登録。個別案件の受注関係は不明",
+        "source": "https://www.hitachi.com/ja-jp/products/digital/about/",
+        "quote": "AIを活用したフロントエンジニアリングやデジタルサービス",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "8058",
+    "name": "三菱商事",
+    "aliases": [],
+    "industry": "卸売業",
+    "business": "多角事業のうち金属等の素材のトレーディング・製造販売。特定の希土類採掘権を意味しない",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "trade",
+        "role": "販売",
+        "business": "多角事業のうち金属等の素材のトレーディング・製造販売。特定の希土類採掘権を意味しない",
+        "source": "https://www.mitsubishicorp.com/jp/ja/about/business-group/materials-solution/",
+        "quote": "資源的素材のトレーディング",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "4502",
+    "name": "武田薬品工業",
+    "aliases": [
+      "武田薬品"
+    ],
+    "industry": "医薬品",
+    "business": "医薬品等の研究開発・製造・販売・輸出入",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "healthcare",
+        "role": "製造",
+        "business": "医薬品等の研究開発・製造・販売・輸出入",
+        "source": "https://www.takeda.com/jp/about/our-company/",
+        "quote": "医薬品等の研究開発・製造・販売・輸出入",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "2914",
+    "name": "日本たばこ産業",
+    "aliases": [
+      "JT"
+    ],
+    "industry": "食料品",
+    "business": "グループの中核であるたばこ事業（2025年統合報告書）",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "tobacco",
+        "role": "製造",
+        "business": "グループの中核であるたばこ事業（2025年統合報告書）",
+        "source": "https://www.jti.co.jp/investors/library/integratedreport/report/2025/story/overview/index.html",
+        "quote": "たばこ事業を中核としたグローバル企業",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "9432",
+    "name": "ＮＴＴ",
+    "aliases": [
+      "NTT"
+    ],
+    "industry": "情報・通信業",
+    "business": "通信ネットワーク・ICTのグループ事業。持株会社と傘下事業会社は別法人",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "telecom",
+        "role": "その他",
+        "business": "通信ネットワーク・ICTのグループ事業。持株会社と傘下事業会社は別法人",
+        "source": "https://group.ntt/jp/group/",
+        "quote": "顧客基盤・通信ネットワーク・ICT技術",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  },
+  {
+    "symbol": "9984",
+    "name": "ソフトバンクグループ",
+    "aliases": [
+      "ソフトバンクG"
+    ],
+    "industry": "情報・通信業",
+    "business": "AIを投資テーマとする戦略的投資持株会社。通信会社ソフトバンクと別法人",
+    "updated_at": "2026-09-24T15:21:00+00:00",
+    "relations": [
+      {
+        "topic": "ai",
+        "role": "金融",
+        "business": "AIを投資テーマとする戦略的投資持株会社。通信会社ソフトバンクと別法人",
+        "source": "https://group.softbank/ir/investors/share_price_consciousness",
+        "quote": "AIという投資テーマに基づき厳選した企業に投資",
+        "state": "確認済み",
+        "direct_business": "不明",
+        "verified_at": "2026-09-24T15:21:00+00:00",
+        "revenue_ratio": null,
+        "profit_ratio": null,
+        "ratio_evidence": ""
+      }
+    ]
+  }
+]

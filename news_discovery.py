@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from company_graph import companies,discover,local_topics,import_companies
+from company_graph import companies,discover,local_topics,import_companies,CompanyIndex
 from discovery_ai import VERSION,PERIODS,request,parse
 from system_data import encode,digest,stamp,readonly
 from system_budget import DailyBudget,BudgetError
@@ -18,10 +18,14 @@ def settings(c):
     root=Path(c['paths']['runtime']).parent
     result=dict(companies_db=str(root/'companies.sqlite3'),db=str(root/'discovery.sqlite3'),
                 max_candidates=5,max_calls=3,periods=PERIODS,enabled=False,allow_indirect=False,
-                horizon='short',min_turnover=100_000_000,max_reaction=.03,benchmarks={},timeframes={})
+                horizon='short',min_turnover=100_000_000,max_reaction=.03,benchmarks={},timeframes={},source_ids=None,max_saved_candidates=50)
     unknown=set(extra)-set(result)
     if unknown:raise ValueError('Unknown discovery config keys')
     result.update(extra)
+    if type(result['max_saved_candidates']) is not int or not 1<=result['max_saved_candidates']<=1000:
+        raise ValueError('max_saved_candidates must be 1..1000')
+    if result['source_ids'] is not None and (not isinstance(result['source_ids'],list) or not 1<=len(result['source_ids'])<=10 or not all(isinstance(x,str) and len(x)==64 for x in result['source_ids'])):
+        raise ValueError('source_ids must contain 1..10 article hashes')
     for k in ('db','companies_db'):
         path=Path(result[k])
         if not path.is_absolute():path=Path(c.get('_base_dir',Path(__file__).resolve().parent))/path
@@ -102,12 +106,21 @@ def sources(c,now):
         if (now-stamp(a['first_seen_at'])).total_seconds()>7*86400:continue
         key=digest([headline(a),a.get('body'),a.get('published_at'),a.get('publisher')])
         unique.setdefault(key,dict(a,id=key,original_id=a['id']))
-    return sorted(unique.values(),key=lambda a:(-priority(a),-(stamp(a['published_at']).timestamp() if a.get('published_at') else 0),a['id']))
+    selected=settings(c)['source_ids']
+    from discovery_relevance import event_key
+    grouped={}
+    for a in unique.values():
+        if selected is not None and a['id'] not in selected:continue
+        key=event_key(a)
+        if key in grouped:
+            grouped[key].setdefault('duplicate_sources',[]).append(dict(id=a['id'],url=a['url'],publisher=a.get('publisher')))
+        else:grouped[key]=a
+    return sorted(grouped.values(),key=lambda a:(-priority(a),-(stamp(a['published_at']).timestamp() if a.get('published_at') else 0),a['id']))
 
 
 def preview(c,now=None):
     now=now or datetime.now(timezone.utc);s=settings(c)
-    registry=companies(s['companies_db'],now)
+    registry=CompanyIndex(companies(s['companies_db'],now))
     articles=[]
     for a in sources(c,now):
         tags=local_topics(a['title']+' '+a.get('body',''))
@@ -171,27 +184,28 @@ class Session:
 
 def process(c,now=None,caller=None,clock=None):
     now=now or datetime.now(timezone.utc);s=settings(c)
-    registry=companies(s['companies_db'],now)
+    registry=CompanyIndex(companies(s['companies_db'],now))
     from system_runtime import process_lock
     with process_lock(s['db']+'.lock'),closing(connect(s['db'])) as db:
-        session=Session(c,db,now,caller,clock);n=0
-        for a in sources(c,now):
-            db.execute('INSERT OR IGNORE INTO discovery_sources VALUES (?,?,?)',(a['id'],encode(a),now.isoformat()));db.commit()
+        session=Session(c,db,now,caller,clock);n=0;new_news=0;articles=sources(c,now)
+        for a in articles:
+            new_news+=db.execute('INSERT OR IGNORE INTO discovery_sources VALUES (?,?,?)',(a['id'],encode(a),now.isoformat())).rowcount;db.commit()
             event=session.analyze(a)
             tags=[i['topic'] for i in event['result']['industries']] if event['status']=='ok' else local_topics(a['title']+' '+a.get('body',''))
             found=discover(a,tags,registry)
-            for index,f in enumerate(found):
-                impact=session.analyze(a,f,event['result']) if event['status']=='ok' and index<s['max_candidates'] and not eligibility(a,c,now) else dict(id=None,status='pending',result=None,finished_at=None)
+            for index,f in enumerate(found[:s['max_saved_candidates']]):
+                impact=session.analyze(a,f,event['result']) if event['status']=='ok' and f['relevance']['eligible'] and index<s['max_candidates'] and not eligibility(a,c,now) else dict(id=None,status='pending',result=None,finished_at=None)
                 row=dict(f,article=a,event=event,impact=impact,periods=s['periods'],
+                    total_local_matches=len(found),saved_candidate_limit=s['max_saved_candidates'],
                     topic_basis='LLM' if event['status']=='ok' else 'local_keywords_unconfirmed',
                     watched=f['symbol'] in c['symbols'],state='ANALYSIS_ONLY',
-                    review_reason='candidate_limit' if index>=s['max_candidates'] else (eligibility(a,c,now) or impact['status']),
+                    review_reason=eligibility(a,c,now) or ('business_evidence_required' if f['relation_state']!='確認済み' else ('relevance_unconfirmed' if not f['relevance']['eligible'] else ('candidate_limit' if index>=s['max_candidates'] else impact['status']))),
                     promotion='手動確認が必要: 価格履歴・流動性・関連性・企業行動・資金/リスク上限。監視対象へ自動追加しません')
                 ident=digest([a['id'],f['company']['revision'],event['id'],impact['id'],row['review_reason']])
                 recorded=max([now]+[stamp(x['finished_at']) for x in (event,impact) if x.get('finished_at')]).isoformat()
                 db.execute('INSERT OR IGNORE INTO discovery_candidates VALUES (?,?,?,?,?)',(ident,a['id'],f['symbol'],recorded,encode(row)));n+=1
             db.commit()
-        return dict(candidates=n,api_calls=session.calls,dry_run=c['dry_run'],db=s['db'])
+        return dict(candidates=n,api_calls=session.calls,dry_run=c['dry_run'],db=s['db'],news=len(articles),new_news=new_news)
 
 
 def candidate_rows(c,asof):
@@ -215,24 +229,51 @@ def candidate_rows(c,asof):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['companies-import','companies-list','preview','run','list','outcomes','backtest'])
+    p.add_argument('command',choices=['companies-import','companies-list','preview','run','list','summary','api-preview','outcomes','backtest'])
     p.add_argument('--config',type=Path,default=Path(__file__).resolve().parent/'config/paper.json')
     p.add_argument('--file',type=Path)
     p.add_argument('--output',type=Path)
     p.add_argument('--dry-run',action='store_true',help='Force paid API calls off, regardless of config')
+    p.add_argument('--json',action='store_true');p.add_argument('--human',action='store_true')
+    p.add_argument('--limit',type=int,default=10)
+    p.add_argument('--news-id');p.add_argument('--url');p.add_argument('--symbol');p.add_argument('--name');p.add_argument('--industry')
+    p.add_argument('--status',choices=['ok','pending','failed','excluded','started'])
+    p.add_argument('--direction',choices=['ポジティブ','ネガティブ','中立','不明'])
+    p.add_argument('--relation',choices=['company','product','supply_chain','industry','unknown'])
+    p.add_argument('--watch',choices=['existing','new']);p.add_argument('--since');p.add_argument('--until')
     args=p.parse_args(argv)
     from system_runtime import read_config
     c=read_config(args.config)
     if args.dry_run:c['dry_run']=True
     now=datetime.now(timezone.utc);s=settings(c)
+    if not 1<=args.limit<=100:p.error('--limit must be 1..100')
+    if args.news_id or args.url:
+        ids=[a['id'] for a in sources(c,now) if (not args.news_id or a['id']==args.news_id or a.get('original_id')==args.news_id) and (not args.url or a['url']==args.url)]
+        if len(ids)!=1:p.error('Article not uniquely found; use an exact recent news ID/URL')
+        c['discovery']=dict(c.get('discovery',{}),source_ids=ids)
+    from discovery_display import selected,summary,plan,print_plan
     if args.command=='companies-import':
         if not args.file:p.error('--file is required')
         value=import_companies(s['companies_db'],json.loads(args.file.read_text(encoding='utf-8-sig')),now)
         print(f'企業情報 {value}件を登録。外部API・注文なし。')
     elif args.command=='companies-list':print(encode(companies(s['companies_db'],now)))
-    elif args.command=='preview':print(encode(preview(c,now)))
-    elif args.command=='run':print(encode(process(c,now)))
-    elif args.command=='list':print(encode(candidate_rows(c,now)))
+    elif args.command in ('preview','api-preview'):
+        if args.command=='api-preview' or args.human:
+            value=plan(c,now)
+            if args.json:print(encode(value))
+            else:print_plan(value,args.limit)
+        else:print(encode(preview(c,now)))
+    elif args.command=='run':
+        result=process(c,now)
+        if args.human and not args.json:print(f"対象ニュース {result['news']} / 新規 {result['new_news']} / API呼出 {result['api_calls']}")
+        else:print(encode(result))
+        if args.human and not args.json:summary(selected(candidate_rows(c,datetime.now(timezone.utc)),args),c,datetime.now(timezone.utc),args.limit)
+    elif args.command in ('list','summary'):
+        rows=candidate_rows(c,now)
+        if args.news_id or args.url:rows=[r for r in rows if r['article']['id'] in c['discovery']['source_ids']]
+        rows=selected(rows,args)
+        if args.json or (args.command=='list' and not args.human):print(encode(rows))
+        else:summary(rows,c,now,args.limit)
     elif args.command=='outcomes':
         from discovery_outcomes import collect
         print(encode(collect(c,now)))

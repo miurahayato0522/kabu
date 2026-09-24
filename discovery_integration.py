@@ -10,22 +10,28 @@ from news_discovery import candidate_rows,settings,for_horizon
 
 
 class DiscoveryNews:
-    def __init__(self,rows,c):self.rows=rows;self.s=settings(c)
+    def __init__(self,rows,c):self.rows=rows;self.s=settings(c);self.max_age=c.get('analysis_max_age_hours',24)*3600
     def assessment(self,symbol,at,allow_indirect=False):
-        when=stamp(at);events=[];unknown=False
+        when=stamp(at);events=[];unknown=False;seen=set()
         for r in self.rows:
             if r['symbol']!=symbol[:4] or stamp(r['discovered_at'])>when:continue
             a=r['article'];i=r['impact'];event=r['event']
-            if not a.get('published_at') or not 0<=(when-stamp(a['published_at'])).total_seconds()<=7*86400:
+            if not a.get('published_at') or not 0<=(when-stamp(a['published_at'])).total_seconds()<=self.max_age:
                 continue
             if stamp(a['first_seen_at'])>when or stamp(r['company']['recorded_at'])>when:continue
             if any(x['status']!='ok' or not x.get('finished_at') or stamp(x['finished_at'])>when for x in (i,event)):
                 unknown=True;continue
             result=i['result']
+            from discovery_relevance import event_key
+            if r.get('relevance') and not r['relevance']['eligible']:
+                unknown=True;continue
             if r['relation_state']!='確認済み' or result['relation'] in ('不明','無関係') or (not r['named_in_news'] and not allow_indirect):
                 unknown=True;continue
             direction=result[self.s['horizon']]
             if direction=='不明':unknown=True;continue
+            key=(event_key(a),direction,result['importance'])
+            if key in seen:continue
+            seen.add(key)
             available=max(stamp(a['first_seen_at']),stamp(a['published_at']),stamp(i['finished_at']),stamp(event['finished_at']),stamp(r['company']['recorded_at']))
             events.append(dict(short_term=direction,importance=result['importance'],event_id=r['article']['id'],
                 analysis_id=i['id'],available_at=available.isoformat(),impact=result,candidate_id=r['id']))
@@ -65,9 +71,9 @@ class NewsOnlyResearch:
                           [b.id]+['event:'+e['event_id'] for e in n['events']])
 
 
-def report_rows(c,asof):
+def report_rows(c,asof,rows=None):
     c=for_horizon(c)
-    rows=candidate_rows(c,asof);news=DiscoveryNews(rows,c);s=settings(c)
+    rows=candidate_rows(c,asof) if rows is None else rows;news=DiscoveryNews(rows,c);s=settings(c)
     if not rows:return []
     output=[]
     from system_status import sessions
@@ -105,6 +111,9 @@ def report_rows(c,asof):
             if p.error:result['checks'].append(p.error)
         except (OSError,ValueError,KeyError,sqlite3.Error) as exc:result['checks'].append(str(exc) if isinstance(exc,ValueError) else type(exc).__name__)
         result['checks'] += ['候補登録のみ。注文・監視リストの追加なし','企業関連性と当該案件への参画を別途確認','昇格には企業行動・資金・流動性・リスク上限の手動確認が必要']
+        from system_queue import eligibility
+        age_reason=eligibility(r['article'],c,asof)
+        if age_reason:result['checks'].append('現在の新規材料には使用不可: '+age_reason)
         if r['impact']['status']!='ok':result['checks'].append('企業別AI解析待ち・失敗')
         if not result['chart_prediction']:result['final_state']='NEEDS_HISTORY_OR_MODEL'
         elif r['impact']['status']!='ok':result['final_state']='ANALYSIS_PENDING'
@@ -112,6 +121,7 @@ def report_rows(c,asof):
         elif result['integrated_decision']['action']=='SELL':result['final_state']='EXIT_REVIEW'
         elif r['impact']['result'][s['horizon']]=='ポジティブ':result['final_state']='NEWS_WATCH'
         else:result['final_state']='REVIEW_OR_NO_TRADE'
+        if age_reason:result['final_state']='HISTORICAL_OR_UNDATED_NEWS'
         output.append(result)
     return output
 

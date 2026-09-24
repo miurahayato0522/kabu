@@ -150,14 +150,14 @@ def html(report):
     for r in report.get('discovered_companies',[]):
         impact=r['impact'].get('result') or {};event=r['event'].get('result') or {}
         chart=r.get('chart_prediction') or {}
-        discovery_cards.append('<section><h3>'+e(r['company']['name'])+' '+e(r['symbol'])+' — '+e(r['final_state'])+'</h3>'+
+        discovery_cards.append('<details><summary>'+e(r['article']['title'])+' / '+e(r['symbol'])+' '+e(r['company']['name'])+' / '+e(r['impact']['status'])+' / '+e(r.get('relevance',{}).get('label',r['relation']))+'</summary><section><h3>'+e(r['company']['name'])+' '+e(r['symbol'])+' — '+e(r['final_state'])+'</h3>'+
             '<p>'+('既存監視銘柄' if r['watched'] else '新たな分析候補（監視対象には未追加）')+'</p>'+
             '<p>'+e(r['article']['title'])+'<br>出典: '+e(r['article']['url'])+' / 公表: '+e(r['article'].get('published_at'))+'</p>'+
             '<p>産業: '+e([x['topic'] for x in event.get('industries',[])])+' / '+e(r['relation'])+' / 関係: '+e(r['relation_state'])+'</p>'+
             '<p>短期 '+e(impact.get('short','解析待ち'))+' / 中期 '+e(impact.get('medium','解析待ち'))+' / 長期 '+e(impact.get('long','解析待ち'))+'</p>'+
             '<p>チャート予測: '+e(chart.get('value'))+' / 対象 '+e(chart.get('horizon'))+'営業日。ニュースの好悪は上昇確率ではありません。</p>'+
-            '<p>'+e(r['project_participation'])+'</p>'+pretty(r['checks'])+
-            '<details><summary>企業情報・出典・影響根拠・統合判断</summary>'+pretty(dict(company=r['company'],event=event,impact=impact,periods=r['periods'],integrated=r['integrated_decision'],news_only=r['news_only_decision']))+'</details></section>')
+            '<p>'+e(r['project_participation'])+'</p>'+pretty(r['checks'])+pretty(dict(review_reason=r['review_reason'],relevance=r.get('relevance'),first_seen_at=r['article']['first_seen_at'],analysis_finished_at=r['impact'].get('finished_at')))+
+            '<details><summary>原文・企業情報・出典・影響根拠・統合判断</summary>'+pretty(dict(article=r['article'],company=r['company'],event=event,impact=impact,periods=r['periods'],integrated=r['integrated_decision'],news_only=r['news_only_decision']))+'</details></section></details>')
     def number(value):return f'{value:,.0f}' if isinstance(value,(int,float)) else '未確認'
     metrics=''.join('<div class="metric"><small>'+e(label)+'</small><strong>'+e(number(value))+'</strong></div>' for label,value in [
         ('仮想資産（円）',a.get('equity')),('現金（円）',a.get('cash')),('実現損益（円）',a.get('realized')),

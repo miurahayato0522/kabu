@@ -3,3 +3,5 @@
 -r requirements-yahoo.txt
 -r requirements-ir.txt
 -r requirements-pdf.txt
+xlrd==2.0.2
+openpyxl==3.1.5

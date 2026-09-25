@@ -1,5 +1,19 @@
 # kabuステーション 株価収集基盤
 
+## 日足更新エラーと継続運転（2026-09-26）
+
+Yahooの9月25日終値欠損を10銘柄で再現しました。欠損は補完せず、銘柄別更新・部分成功・失敗段階と再試行予定を記録します。企業行動は観測候補と確認済台帳を分離し、安全停止を維持します。
+
+**運転中BotをCtrl+Cで停止してから**バックアップと日足更新を実行してください。現在の設定・DBを削除/初期化する必要はありません。
+
+```bat
+python operations_backup.py --config config/paper.json
+python kabu_system.py daily-refresh --config config/paper.json
+python kabu_system.py run-status --config config/paper.json
+```
+
+再起動、APIパスワードの安全な入力、9月28日の確認、隔離検証、企業行動の情報源と限界は[継続運転の手順](docs/RUNTIME_STABILITY.md)を参照してください。新しい実注文・有料AI解析はありません。
+
 ## 関連性・費用プレビュー・見やすい一覧
 
 ```bat

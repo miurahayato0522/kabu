@@ -38,7 +38,7 @@ def news_store(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status','evening-report','analysis-preview'])
+    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status','evening-report','analysis-preview','daily-refresh'])
     p.add_argument('--config',type=Path,default=ROOT/'config/paper.json')
     p.add_argument('--once',action='store_true',help='自動運転を1巡だけ実行')
     p.add_argument('--actions-db',type=Path,help='確認済み企業行動の台帳')
@@ -69,6 +69,18 @@ def main(argv=None):
     p.add_argument('--stop-file',type=Path,default=ROOT/'data/STOP_NEW_TRADES')
     args = p.parse_args(argv)
     try:
+        if args.command=='daily-refresh':
+            from contextlib import closing
+            from system_runtime import read_config,process_lock,connect,Runtime
+            from daily_updates import update
+            c=read_config(args.config)
+            if not c['network_enabled']:raise ValueError('Network disabled')
+            if args.symbols and not set(args.symbols)<=set(c['symbols']):raise ValueError('Symbols must be configured four-character watch codes')
+            with process_lock(c['paths']['runtime']+'.lock'):
+                result=update(c,datetime.now(timezone.utc),args.symbols)
+                with closing(connect(c['paths']['runtime'])) as db:
+                    Runtime(c).log(db,'daily_manual',result['status'],encode(result))
+            return 0 if result['status']=='ok' else 1
         if args.command=='run':
             from system_runtime import run_config
             run_config(args.config,args.once)

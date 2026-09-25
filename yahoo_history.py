@@ -51,8 +51,12 @@ def convert(frame, code, start, end):
             values = {key: float(row[column]) * cumulative for key, column in
                       [('O','Open'), ('H','High'), ('L','Low'), ('C','Close')]}
             volume = float(row['Volume']) / cumulative
-            if any(not math.isfinite(v) or v <= 0 for v in values.values()) or not math.isfinite(volume) or volume <= 0:
-                raise HistoryError(f'{day}: 価格・出来高の欠損。補完せず停止します')
+            invalid=[k for k,v in values.items() if not math.isfinite(v) or v<=0]
+            if not math.isfinite(volume) or volume<=0: invalid.append('Vo')
+            if invalid:
+                raise HistoryError(f'{day}: invalid_ohlcv fields={",".join(invalid)}; zero/missing/nonpositive; no imputation')
+            if not values['L']<=min(values['O'],values['C'])<=max(values['O'],values['C'])<=values['H']:
+                raise HistoryError(f'{day}: inconsistent_ohlc')
             rows.append(dict(values, Date=day.isoformat(), Code=code, Vo=volume,
                              AdjFactor=1 / split if split else 1,
                              ExRT=('1' if split > 1 else '2') if split and split != 1 else '0',
@@ -60,6 +64,8 @@ def convert(frame, code, start, end):
                              PriceBasis='split_reconstructed_not_exchange_original'))
         if split:
             cumulative *= split
+            if not math.isfinite(cumulative) or cumulative<=0:
+                raise HistoryError('Invalid cumulative split factor')
     if not rows:
         raise HistoryError('指定期間に日足がありません')
     return list(reversed(rows))
@@ -71,6 +77,13 @@ def save(path, code, rows):
         raise HistoryError('J-QuantsのDBには保存できません')
     if not rows or any(r['Code'] != code or r['DataSource'] != SOURCE for r in rows):
         raise HistoryError('保存データが不正です')
+    for row in rows:
+        if any(type(row.get(k)) not in (int,float) or not math.isfinite(row[k]) or row[k]<=0
+               for k in ('O','H','L','C','Vo','AdjFactor')):
+            raise HistoryError('Invalid OHLCV/split factor at save boundary')
+        if not row['L']<=min(row['O'],row['C'])<=max(row['O'],row['C'])<=row['H']:
+            raise HistoryError('Inconsistent OHLC at save boundary')
+        date.fromisoformat(row['Date'])
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(path)) as db, db:
         db.execute('''CREATE TABLE IF NOT EXISTS daily_prices (
@@ -78,6 +91,9 @@ def save(path, code, rows):
             payload TEXT NOT NULL,PRIMARY KEY(code,day,source))''')
         if any(r[0] != SOURCE for r in db.execute('SELECT DISTINCT source FROM daily_prices')):
             raise HistoryError('別の取得元のDBへは保存できません')
+        existing={r[0] for r in db.execute('SELECT day FROM daily_prices WHERE code=?',(code,))}
+        if not existing.issubset({r['Date'] for r in rows}):
+            raise HistoryError('Incomplete replacement would remove saved dates; preserved existing data')
         # 古い分割基準のデータを混ぜないため、銘柄ごと取得範囲全体を置換。
         db.execute('DELETE FROM daily_prices WHERE code=?', (code,))
         db.executemany('INSERT INTO daily_prices VALUES (?,?,?,?,?)', [

@@ -28,7 +28,8 @@ class YahooTests(unittest.TestCase):
         self.assertEqual(convert(frame,'72030',date(2026,9,1),date(2026,9,2))[0]['C'],100)
 
     def test_source_isolation_and_loader(self):
-        row = {'Code':'72030','Date':'2026-09-01','DataSource':SOURCE}
+        row = {'Code':'72030','Date':'2026-09-01','DataSource':SOURCE,
+               'O':100,'H':100,'L':100,'C':100,'Vo':1000,'AdjFactor':1}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'test.db'
             save(path,'72030',[row])

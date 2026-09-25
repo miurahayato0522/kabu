@@ -64,6 +64,9 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, ac
     if now.tzinfo is None:
         raise ValueError('Paper time requires timezone')
     today = now.astimezone(JST).date().isoformat()
+    local_time=now.astimezone(JST).strftime('%H:%M:%S')
+    if not ('09:00:00'<=local_time<='11:30:00' or '12:30:00'<=local_time<='15:30:00'):
+        raise ValueError('Outside XTKS trading hours; account not advanced')
     used_model = getattr(strategy,'chart',strategy)
     if hasattr(used_model,'metadata') and stamp(used_model.metadata['created_at']) > now:
         raise ValueError('Model creation time is in the future')
@@ -159,6 +162,7 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, ac
                         price=marks[s],unrealized=q*marks[s]-account.costs[s],
                         opened_at=opened.get(s),valued_at=now.isoformat()) for s,q in account.positions.items() if q}
         record = dict(at=now.isoformat(), mode='forward_saved_ticks_simulation', decisions=decisions,
+            new_buys_blocked=bool(stop_new),
             orders=account.orders[old_orders:], fills=account.fills[old_fills:], pending=keep,
             cash=account.cash, positions=account.positions, equity=value,
             realized=account.realized, unrealized=value-account.cash-sum(account.costs.values()),

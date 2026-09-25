@@ -1,0 +1,29 @@
+[
+  {
+    "symbol":"1605","name":"ＩＮＰＥＸ","aliases":["INPEX"],"industry":"鉱業",
+    "business":"石油・天然ガス・低炭素エネルギー事業。地域・事業によるグループ会社の担当範囲は個別確認が必要。",
+    "updated_at":"2026-09-23T15:23:53+00:00",
+    "relations":[{"topic":"energy","role":"探査・開発","business":"石油・天然ガスを含むエネルギー開発",
+      "state":"確認済み","direct_business":"不明","source":"https://www.inpex.com/business/",
+      "quote":"石油・天然ガス・低炭素エネルギー","verified_at":"2026-09-23T15:23:53+00:00",
+      "revenue_ratio":null,"profit_ratio":null,"ratio_evidence":""}]
+  },
+  {
+    "symbol":"6857","name":"アドバンテスト","aliases":[],"industry":"電気機器",
+    "business":"電子計測技術と半導体テスト。個別受注や顧客構成は未確認。",
+    "updated_at":"2026-09-23T15:23:53+00:00",
+    "relations":[{"topic":"semiconductor","role":"装置供給","business":"半導体テスト関連事業",
+      "state":"確認済み","direct_business":"不明","source":"https://www.advantest.com/ja/about/",
+      "quote":"半導体テストのリーディング・カンパニー","verified_at":"2026-09-23T15:23:53+00:00",
+      "revenue_ratio":null,"profit_ratio":null,"ratio_evidence":""}]
+  },
+  {
+    "symbol":"8801","name":"三井不動産","aliases":[],"industry":"不動産業",
+    "business":"オフィスビル・商業施設・ホテル・住宅・物流施設等に関わる事業。各事業の利益寄与は未確認。",
+    "updated_at":"2026-09-23T15:23:53+00:00",
+    "relations":[{"topic":"real_estate","role":"不動産","business":"複数用途の不動産関連サービス",
+      "state":"確認済み","direct_business":"不明","source":"https://www.mitsuifudosan.co.jp/business/",
+      "quote":"オフィスビル、商業施設、ホテル・リゾート、ロジスティクス、住宅",
+      "verified_at":"2026-09-23T15:23:53+00:00","revenue_ratio":null,"profit_ratio":null,"ratio_evidence":""}]
+  }
+]

@@ -9,7 +9,8 @@ from urllib.parse import urlsplit
 from system_data import readonly,stamp,encode,digest
 
 TOPICS={
-    'rare_earth':['レアアース','希土類'], 'semiconductor':['半導体','AI','人工知能'],
+    'rare_earth':['レアアース','希土類'], 'semiconductor':['半導体'],
+    'ai':['人工知能','生成AI','AI'], 'telecom':['通信','ネットワーク'], 'tobacco':['たばこ','タバコ'],
     'banking':['銀行','日銀','FRB','政策金利','金融政策'],
     'real_estate':['不動産','政策金利','金融政策'],
     'export_manufacturing':['輸出','為替','円安','円高','政策金利'],
@@ -76,25 +77,56 @@ def companies(path,asof):
             if digest(c)!=ident:raise ValueError('Company registry integrity mismatch')
             validate(c,asof)
             latest[code]=dict(c,revision=ident,recorded_at=recorded)
-    return list(latest.values())
+    from company_catalog import latest as listing,merge
+    return merge(list(latest.values()),listing(path,asof))
 
 
 def local_topics(text):
-    return [tag for tag,words in TOPICS.items() if any(word in text for word in words)]
+    import re
+    return [tag for tag,words in TOPICS.items() if any((bool(re.search(r'(?<![A-Za-z])AI(?![A-Za-z])',text)) if word=='AI' else word in text) for word in words)]
 
 
 def discover(article,topic_ids,registry):
     text=article['title']+'\n'+article.get('body','')
+    if isinstance(registry,CompanyIndex):registry=registry.select(text,topic_ids)
     found=[]
     for c in registry:
         names=[c['name']]+c['aliases']
         named=[name for name in names if name in text]
-        relations=[r for r in c['relations'] if r['topic'] in topic_ids]
+        relations=[r for r in c['relations'] if named or r['topic'] in topic_ids]
         if not named and not relations:continue
         verified=[r for r in relations if r['state']=='確認済み']
+        from discovery_relevance import classify
+        relevance=classify(article,c,relations,named)
         found.append(dict(symbol=c['symbol'],company=c,matched_relations=relations,named_in_news=bool(named),
+            relevance=relevance,
             names_in_news=named,relation='記事に企業名あり' if named else '事業情報から探索（間接候補）',
             relation_state='確認済み' if verified else '不明',
             project_participation='不明（事業関連だけでは当該案件への参画を意味しない）',
-            rank=100*bool(named)+10*len(verified)+len(relations)))
+            rank=100*bool(named)+30*int(relevance['eligible'])+10*len(verified)+len(relations)))
     return sorted(found,key=lambda r:(-r['rank'],r['symbol']))
+
+
+class CompanyIndex:
+    """One inverted topic index and name trie per run; no full-universe LLM input."""
+    def __init__(self,rows):
+        self.rows={r['symbol']:r for r in rows};self.topics={};self.names={}
+        for r in rows:
+            for relation in r['relations']:self.topics.setdefault(relation['topic'],set()).add(r['symbol'])
+            for name in [r['name']]+r['aliases']:
+                node=self.names
+                for char in name:node=node.setdefault(char,{})
+                node.setdefault(None,set()).add(r['symbol'])
+
+    def __len__(self):return len(self.rows)
+
+    def select(self,text,topics):
+        codes=set()
+        for topic in topics:codes.update(self.topics.get(topic,()))
+        for start in range(len(text)):
+            node=self.names
+            for position in range(start,len(text)):
+                char=text[position]
+                if char not in node:break
+                node=node[char];codes.update(node.get(None,()))
+        return [self.rows[code] for code in sorted(codes)]

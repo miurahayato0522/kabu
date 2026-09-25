@@ -1,6 +1,28 @@
 # kabuステーション 株価収集基盤
 
+## 関連性・費用プレビュー・見やすい一覧
+
+```bat
+.\.venv\Scripts\python.exe news_discovery.py summary --limit 10
+.\.venv\Scripts\python.exe news_discovery.py summary --symbol 7203
+.\.venv\Scripts\python.exe news_discovery.py api-preview --limit 3
+.\.venv\Scripts\python.exe news_discovery.py run --dry-run --human
+```
+
+企業名/製品/供給網/同一産業/不明を分離し、一般的なAIニュースを半導体装置の材料と断定しません。確認済み事業情報は監視10銘柄を含む15社へ拡充しました。従来JSON出力は維持し、summaryまたは--humanで簡潔表示できます。[登録・絞り込み・1記事の費用確認・モック検証の手順](docs/DISCOVERY_QUALITY.md)を参照してください。有料APIは自動実行していません。
+
 ## 経済・産業ニュースから関連銘柄を探索
+
+JPXの月末一覧を取り込む企業マスター拡張と、対象を最大10記事に限定した実ニュース検証を追加しました。現在のローカルDBには国内普通株3,700社、公式資料で確認した事業関係15社を登録しています。業種だけの推定候補とは区別します。[企業DB拡張・少数ニュース検証の手順](docs/COMPANY_CATALOG.md)を参照してください。
+
+```bat
+.\.venv\Scripts\python.exe company_catalog.py status
+.\.venv\Scripts\python.exe discovery_check.py prepare --folder data/news_check_next --limit 3
+.\.venv\Scripts\python.exe discovery_check.py dry-run --folder data/news_check_next
+.\.venv\Scripts\python.exe discovery_check.py report --folder data/news_check_next
+```
+
+上記の検証CLIはAPI送信しません。フォルダー名は未使用の名前にしてください。AI結果がない場合は検証成功とは表示しません。
 
 企業情報の出典付きDB、産業→企業の2段階解析、MA/LightGBMとの研究用統合、翌営業日レポートへの表示を追加しました。新発見銘柄は分析候補のみで、自動的に売買対象へ追加しません。
 
@@ -12,7 +34,7 @@
 .\.venv\Scripts\python.exe kabu_system.py evening-report --config config/paper.json
 ```
 
-上記は有料API通信なし。dry-runで保存されるのは未解析候補です。初期企業12社のうち出典付き事業関係は3社で、残りは未登録です。設定・出典・有料解析を後日開始する条件・検証コマンドは[関連銘柄探索ガイド](docs/INDUSTRY_DISCOVERY.md)を参照してください。
+上記は有料API通信なし。dry-runで保存されるのは未解析候補です。従来の初期サンプルは12社・確認済み事業関係3社で、JPXマスターと追加資料は別途取り込みます。設定・出典・有料解析を後日開始する条件・検証コマンドは[関連銘柄探索ガイド](docs/INDUSTRY_DISCOVERY.md)を参照してください。
 
 ## 時間外の翌営業日レポート
 

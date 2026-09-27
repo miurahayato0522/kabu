@@ -23,7 +23,7 @@ def priority(article):
     text=article['title']+' '+article.get('body','')
     score=100*int(any(w in text for w in ('業績修正','上方修正','下方修正','倒産','上場廃止','決算')))
     score+=20*int(bool(article.get('body')))+10*int(article.get('scope_tags')==['company'])
-    return score
+    return score+article.get('quality',{}).get('priority',0)*10
 
 
 def refresh_queue(db, articles, c, now):
@@ -33,9 +33,21 @@ def refresh_queue(db, articles, c, now):
         db.execute('INSERT OR IGNORE INTO analysis_queue VALUES (?,?,?,?)',
                    (ident,encode(article),'pending',now.isoformat()))
     pending=[]
-    for ident,raw in db.execute("SELECT id,payload FROM analysis_queue WHERE status='pending'").fetchall():
-        article=json.loads(raw)
-        reason=eligibility(article,c,now)
+    from news_quality import annotate,send_reason,cache_states,cache_state
+    cached=cache_states(c)
+    stored=db.execute('SELECT id,payload,status FROM analysis_queue').fetchall()
+    audited=annotate([dict(json.loads(raw),_queue_id=ident) for ident,raw,status in stored],c,now)
+    by_id={a['_queue_id']:a for a in audited}
+    for ident,raw,status in stored:
+        if status!='pending':continue
+        article=by_id[ident];article.pop('_queue_id',None);raw=encode(article)
+        db.execute('UPDATE analysis_queue SET payload=? WHERE id=?',(raw,ident))
+        reason=eligibility(article,c,now) or send_reason(article,c,now)
+        hit=cache_state(article,c,cached) if cached else None
+        if not reason and hit:
+            # Preserve unresolved/failed safety state; cache hits never call the API.
+            db.execute('UPDATE analysis_queue SET status=?,updated_at=? WHERE id=?',(hit,now.isoformat(),ident))
+            continue
         if reason:
             db.execute("UPDATE analysis_queue SET status='excluded',updated_at=? WHERE id=?",(now.isoformat(),ident))
             db.execute('INSERT OR REPLACE INTO queue_exclusions VALUES (?,?,?)',(ident,reason,now.isoformat()))
@@ -68,13 +80,21 @@ def budget_status(c,now):
 
 def preview(c,now):
     counts,eligible,exclusions={},[],[]
+    from news_quality import cache_states,cache_state
+    cached=cache_states(c)
     if Path(c['paths']['runtime']).is_file():
         with closing(readonly(c['paths']['runtime'])) as db:
-            for ident,raw,status in db.execute('SELECT id,payload,status FROM analysis_queue'):
+            from news_quality import annotate
+            records=db.execute('SELECT id,payload,status FROM analysis_queue').fetchall()
+            audited={a['_queue_id']:a for a in annotate([dict(json.loads(raw),_queue_id=ident) for ident,raw,status in records],c,now)}
+            for ident,raw,status in records:
                 counts[status]=counts.get(status,0)+1
-                article=json.loads(raw)
+                article=audited[ident];article.pop('_queue_id',None)
                 if status=='pending':
-                    reason=eligibility(article,c,now)
+                    from news_quality import classify,send_reason
+                    article=dict(article,quality=article.get('quality') or classify(article,c,now))
+                    reason=eligibility(article,c,now) or send_reason(article,c,now)
+                    if not reason and cached and cache_state(article,c,cached):reason='CACHED_RESULT'
                     if reason:exclusions.append(dict(id=ident,reason=reason))
                     else:eligible.append(dict(id=ident,title=article['title'],priority=priority(article),
                         published_at=article.get('published_at'),first_seen_at=article.get('first_seen_at'),article=article))

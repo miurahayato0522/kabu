@@ -10,7 +10,7 @@ from news_discovery import candidate_rows,settings,for_horizon
 
 
 class DiscoveryNews:
-    def __init__(self,rows,c):self.rows=rows;self.s=settings(c);self.max_age=c.get('analysis_max_age_hours',24)*3600
+    def __init__(self,rows,c):self.rows=rows;self.c=c;self.s=settings(c);self.max_age=c.get('analysis_max_age_hours',24)*3600
     def assessment(self,symbol,at,allow_indirect=False):
         when=stamp(at);events=[];unknown=False;seen=set()
         for r in self.rows:
@@ -18,18 +18,22 @@ class DiscoveryNews:
             a=r['article'];i=r['impact'];event=r['event']
             if not a.get('published_at') or not 0<=(when-stamp(a['published_at'])).total_seconds()<=self.max_age:
                 continue
+            from news_quality import send_reason
+            quality_reason=send_reason(a,self.c,when)
+            if quality_reason and quality_reason!='LOW_COMPANY_RELEVANCE':
+                unknown=True;continue
             if stamp(a['first_seen_at'])>when or stamp(r['company']['recorded_at'])>when:continue
             if any(x['status']!='ok' or not x.get('finished_at') or stamp(x['finished_at'])>when for x in (i,event)):
                 unknown=True;continue
             result=i['result']
-            from discovery_relevance import event_key
+            from news_quality import event_cluster
             if r.get('relevance') and not r['relevance']['eligible']:
                 unknown=True;continue
             if r['relation_state']!='確認済み' or result['relation'] in ('不明','無関係') or (not r['named_in_news'] and not allow_indirect):
                 unknown=True;continue
             direction=result[self.s['horizon']]
             if direction=='不明':unknown=True;continue
-            key=(event_key(a),direction,result['importance'])
+            key=(event_cluster(a),direction,result['importance'])
             if key in seen:continue
             seen.add(key)
             available=max(stamp(a['first_seen_at']),stamp(a['published_at']),stamp(i['finished_at']),stamp(event['finished_at']),stamp(r['company']['recorded_at']))
@@ -89,24 +93,40 @@ def report_rows(c,asof,rows=None):
         except (OSError,ValueError,KeyError):model_error='chart_model_unavailable'
     policy=dict(c['integration'],allow_indirect=s['allow_indirect'])
     integrated=BusinessImpactStrategy(chart,news,policy)
+    histories={};predictions={};snapshot=None
+    from contextlib import closing
+    from system_data import readonly
+    try:
+        with closing(readonly(c['paths']['prices'])) as db:
+            codes=[v[0] for v in db.execute('SELECT DISTINCT code FROM daily_prices')]
+        snapshot={}
+        for b in provider(c['paths']['prices']).bars(codes):
+            if b.day<=day and stamp(b.available_at)<=asof:snapshot.setdefault(b.symbol[:4],[]).append(b)
+    except (OSError,ValueError,KeyError,sqlite3.Error):snapshot=None
     for r in rows:
         result=dict(r,chart_prediction=None,integrated_decision=None,news_only_decision=None,
                     final_state='WATCH_NEWS',execution_eligible=False,checks=[])
         try:
             if model_error:raise ValueError(model_error)
-            bars=[b for b in provider(c['paths']['prices']).bars([r['symbol']]) if b.day<=day and stamp(b.available_at)<=asof]
-            history=daily_groups(bars)[r['symbol']+'0']
+            if r['symbol'] not in histories:
+                try:
+                    bars=snapshot.get(r['symbol'],[]) if snapshot is not None else [b for b in provider(c['paths']['prices']).bars([r['symbol']]) if b.day<=day and stamp(b.available_at)<=asof]
+                    histories[r['symbol']]=daily_groups(bars)[r['symbol']+'0']
+                except (OSError,ValueError,KeyError,sqlite3.Error) as exc:histories[r['symbol']]=exc
+            history=histories[r['symbol']]
+            if isinstance(history,Exception):raise history
             if history[-1].day!=day or asof<stamp(daily_cutoff(day)) or stamp(history[-1].fetched_at)<stamp(daily_cutoff(day)) or len(history)<21:
                 raise ValueError('completed_price_history_unavailable')
-            p=chart.predict(history,asof.isoformat())
-            integrated_prediction=integrated.predict(history,asof.isoformat())
+            if r['symbol'] not in predictions:
+                predictions[r['symbol']]=(chart.predict(history,asof.isoformat()),integrated.predict(history,asof.isoformat()),NewsOnlyResearch(news,c).predict(history,asof.isoformat()))
+            p,integrated_prediction,news_prediction=predictions[r['symbol']]
             low,high=s['periods'][s['horizon']]
             if not low<=p.horizon or (high is not None and p.horizon>high):
                 integrated_prediction=replace(integrated_prediction,direction=0,
                     reasons=integrated_prediction.reasons+['チャート予測とニュースの選択期間が不一致。統合候補を保留'])
             held=holdings.get(r['symbol']+'0',0) if r['watched'] else 0
             result.update(chart_prediction=p.record(),integrated_decision=decide(integrated_prediction,held),held=held,
-                news_only_decision=decide(NewsOnlyResearch(news,c).predict(history,asof.isoformat()),held))
+                news_only_decision=decide(news_prediction,held))
             result['checks'].append('売買代金確認: '+str(history[-1].close*history[-1].volume>=s['min_turnover']))
             if p.error:result['checks'].append(p.error)
         except (OSError,ValueError,KeyError,sqlite3.Error) as exc:result['checks'].append(str(exc) if isinstance(exc,ValueError) else type(exc).__name__)

@@ -110,12 +110,16 @@ def sources(c,now):
     from discovery_relevance import event_key
     grouped={}
     for a in unique.values():
-        if selected is not None and a['id'] not in selected:continue
         key=event_key(a)
         if key in grouped:
-            grouped[key].setdefault('duplicate_sources',[]).append(dict(id=a['id'],url=a['url'],publisher=a.get('publisher')))
+            grouped[key].setdefault('duplicate_sources',[]).append(dict(a))
         else:grouped[key]=a
-    return sorted(grouped.values(),key=lambda a:(-priority(a),-(stamp(a['published_at']).timestamp() if a.get('published_at') else 0),a['id']))
+    # Build the local name/topic index once.  It permits candidate discovery beyond
+    # the watch list while keeping classification deterministic and offline.
+    registry=CompanyIndex(companies(settings(c)['companies_db'],now))
+    from news_quality import annotate
+    audited=annotate(list(grouped.values()),dict(c,_quality_company_index=registry),now)
+    return [a for a in audited if selected is None or a['id'] in selected]
 
 
 def preview(c,now=None):
@@ -151,7 +155,12 @@ class Session:
         if row and row[0]!='pending':return dict(id=ident,status=row[0],result=json.loads(row[1]) if row[1] else None,finished_at=row[2])
         self.db.execute('INSERT OR IGNORE INTO discovery_ai(id,source_id,stage,symbol,status,request,input) VALUES (?,?,?,?,?,?,?)',
             (ident,a['id'],stage,candidate['symbol'] if candidate else None,'pending',encode(payload),encode(original)));self.db.commit()
-        response=None;reason=eligibility(a,self.c,self.now)
+        from news_quality import send_reason
+        response=None;reason=eligibility(a,self.c,self.now) or send_reason(a,self.c,self.now)
+        # Shared macro event extraction is not company impact fanout.
+        if reason=='LOW_COMPANY_RELEVANCE' and a.get('quality',{}).get('category')=='macro':
+            if candidate is None or (self.s['allow_indirect'] and candidate['relevance']['eligible'] and candidate['relation_state']=='確認済み'):
+                reason=None
         if reason:
             self.db.execute("UPDATE discovery_ai SET status='excluded',error=? WHERE id=?",(reason,ident));self.db.commit()
             return dict(id=ident,status='excluded',result=None,finished_at=None)

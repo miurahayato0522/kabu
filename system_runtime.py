@@ -172,24 +172,24 @@ class Runtime:
         recorder=Recorder(Path(self.c['paths']['ticks']),'production')
         try:
             for symbol in self.c['symbols']:
-                recorder.write('snapshot',self.client.board(symbol))
+                quote=self.client.board(symbol)
+                from daily_backtest import positive
+                if (quote.get('Symbol')!=symbol or quote.get('Exchange')!=1 or
+                    not positive(quote.get('CurrentPrice')) or
+                    not 0<=(self.clock()-stamp(quote['CurrentPriceTime'])).total_seconds()<=60):
+                    raise ValueError('Invalid or stale live quote')
+                recorder.write('snapshot',quote)
+        except Exception:
+            self.client=None  # Reauthenticate on the next scheduled attempt, without logging secrets.
+            raise
         finally:
             recorder.close()
 
     def daily_job(self):
         if not self.c.get('refresh_yahoo',False):
-            return
-        from yahoo_history import fetch_frame,convert,save
-        from jquants_history import symbol_code
-        local=self.clock().astimezone(JST)
-        day=local.date()
-        end=day+timedelta(days=1) if local.hour>=16 else day
-        start=datetime.fromisoformat(self.c['history_start']).date()
-        for symbol in self.c['symbols']:
-            code=symbol_code(symbol)
-            frame=fetch_frame(code,start,day)
-            rows=convert(frame,code,start,end)
-            save(Path(self.c['paths']['prices']),code,rows)
+            return dict(status='disabled',symbols=[])
+        from daily_updates import update
+        return update(self.c,self.clock())
 
     def document_job(self,db):
         for item in self.c.get('official_documents',[]):
@@ -295,6 +295,7 @@ class Runtime:
                 if evening_daily:
                     db.execute("INSERT OR REPLACE INTO runtime_meta VALUES ('evening_daily_attempt',?)",(str(local.date()),));db.commit()
                 try:
+                    outcome=None
                     if name in self.hooks:
                         self.hooks[name](self,db)
                     elif name in ('news','documents','daily','prices') and not self.c['network_enabled']:
@@ -303,16 +304,27 @@ class Runtime:
                             raise ValueError('News coverage unavailable in offline mode')
                     elif name=='news': collect_topics(self.c)
                     elif name=='documents': self.document_job(db)
-                    elif name=='daily': self.daily_job()
+                    elif name=='daily': outcome=self.daily_job()
                     elif name=='prices': self.price_job()
                     elif name=='analysis': self.analysis_job(db)
-                    elif name=='paper': self.paper_job(db)
+                    elif name=='paper': outcome=self.paper_job(db)
                     if name=='analysis' and self.c.get('discovery',{}).get('enabled',False):
                         from news_discovery import process
                         discovery=process(self.c,self.clock(),caller=self.hooks.get('discovery_llm'),clock=self.clock)
                         self.log(db,'discovery','DRY_RUN' if self.c['dry_run'] else 'completed',
                                  f"candidates={discovery['candidates']} api_calls={discovery['api_calls']}")
                     status,detail='ok','completed'
+                    if name=='daily' and outcome is not None:
+                        status,detail=outcome['status'],encode(outcome)
+                    elif name=='paper' and outcome is not None:
+                        detail=encode(dict(orders=len(outcome['orders']),fills=len(outcome['fills']),
+                            decisions=len(outcome['decisions']),pending=len(outcome['pending']),
+                            result='executed' if outcome['fills'] else ('new_buys_blocked' if outcome.get('new_buys_blocked') else
+                                ('orders_rejected' if outcome['orders'] else ('waiting_next_quote' if outcome['pending'] else 'no_signal')))))
+                    elif name=='analysis' and self.c['dry_run']:
+                        detail='DRY_RUN; paid API not called'
+                    elif name in ('daily','prices','documents') and not self.c['network_enabled']:
+                        status,detail='offline','network disabled'
                 except Exception as exc:
                     status,detail='failed',type(exc).__name__
                     # Do not log arbitrary exception bodies, which may contain credentials/URLs.

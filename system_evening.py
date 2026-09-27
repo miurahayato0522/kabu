@@ -38,6 +38,7 @@ def context(c,now,status):
         if (not reason and not usable) or (reason and not reason.startswith('old_')):
             news.pending_codes.update(a['symbols'])
         articles.append(dict(source=a,state='対象外: '+reason if reason else ('解析済み' if usable else '解析待ち・失敗・未確認'),
+            analysis_status='ok' if usable else (item['status'] if item else 'pending'),
             analysis_id=item['analysis_id'] if usable else None,result=item['result'] if usable else None,
             model=item['model'] if usable else None))
     # Archive only information actually available at this report's timestamp.
@@ -57,6 +58,8 @@ def averages(history):
 
 
 def build(c,now=None):
+    import time
+    started=time.perf_counter()
     now=now or datetime.now(timezone.utc)
     status=snapshot(c,now);calendar=status['calendar'];day=calendar['analysis_day']
     news,articles=context(c,now,status)
@@ -71,10 +74,18 @@ def build(c,now=None):
         except (OSError,ValueError,KeyError,TypeError):model_error='モデルを読み込めないか、分析時点で利用できないモデルです'
     integrated=BusinessImpactStrategy(chart,news,c['integration'])
     results=[];inputs=[]
+    price_snapshot={};read_count=0
+    try:
+        read_count+=1
+        for b in provider(c['paths']['prices']).bars(list(c['symbols'])):
+            price_snapshot.setdefault(b.symbol,[]).append(b)
+    except (OSError,ValueError,KeyError,sqlite3.Error):price_snapshot={}
     for code,name in c['symbols'].items():
-        symbol=code+'0';history=[];points=[];change=None;error=None;last=None
+        symbol=code+'0';history=[];points=[];change=None;error=None;last=None;chart_signal=None
         try:
-            available=provider(c['paths']['prices']).bars([code])
+            available=price_snapshot.get(symbol)
+            if available is None:
+                read_count+=1;available=provider(c['paths']['prices']).bars([code])
             history=[b for b in available if b.day<=day and stamp(b.available_at)<=now]
             last=max((b.day for b in history),default=None)
             if now<stamp(daily_cutoff(day)):raise ValueError('当日足は未確定扱い（16時JST以降に再実行）')
@@ -84,6 +95,7 @@ def build(c,now=None):
             if len(history)<21:raise ValueError('5/20クロスに必要な21営業日の履歴がありません')
             points,change=averages(history)
             if model_error:raise ValueError(model_error)
+            chart_signal=chart.predict(history,now.isoformat()).record()
             p=integrated.predict(history,now.isoformat())
         except (OSError,ValueError,KeyError,sqlite3.Error) as exc:
             error=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
@@ -99,7 +111,7 @@ def build(c,now=None):
         results.append(dict(symbol=symbol,name=name,analysis_day=day,last_data_day=last,
             close=history[-1].close if history else None,change_pct=change,
             ma5=points[-1]['ma5'] if points else None,ma20=points[-1]['ma20'] if points else None,
-            ma_signal=ma,chart_return=p.value,forecast_horizon_sessions=None if model_error and not metadata else p.horizon,
+            ma_signal=ma,chart_signal=chart_signal,chart_return=p.value,forecast_horizon_sessions=None if model_error and not metadata else p.horizon,
             forecast_label='予測保留（モデル未確認）' if model_error else (f'{p.horizon}営業日後の終値リターン予測（翌日リターンではありません）' if metadata else '5/20移動平均クロス（リターン予測なし）'),
             chart_model='lightgbm-unavailable' if model_error else chart.name,model_version=metadata,news=assessment,articles=relevant,
             decision=final,held=held,points=points[-120:],
@@ -117,16 +129,21 @@ def build(c,now=None):
     except (OSError,ValueError,KeyError,sqlite3.Error):
         discovered=[];status['warnings'].append('関連銘柄DB/設定を確認してください。発見結果は利用不可')
     source['discovery']=discovered
-    return dict(version='evening-v1',at=now.isoformat(),at_jst=now.astimezone(JST).isoformat(),
+    report=dict(version='evening-v1',at=now.isoformat(),at_jst=now.astimezone(JST).isoformat(),
         analysis_day=day,next_session=calendar['next_session'],status=status,results=results,
         discovered_companies=discovered,
         input_hash=digest(source),inputs=source,
         limitations=['研究用の翌営業日候補。実注文・仮想注文の予約ではありません',
                     '16時JSTを確定足利用の保守的な境界とします。配信元の完全性は保証しません',
                     '口座は最終保存時点の評価です。ニュースの影響分類は株価予測ではありません'])
+    from evening_summary import enrich
+    enrich(report,c,now)
+    report['input_hash']=digest(source)
+    report['performance']=dict(build_seconds=time.perf_counter()-started,watch_price_reads=read_count)
+    return report
 
 
-def html(report):
+def legacy_html(report):
     def e(value):return escape(str(value))
     def pretty(value):return '<pre>'+e(json.dumps(value,ensure_ascii=False,indent=2))+'</pre>'
     cards=[]
@@ -179,7 +196,14 @@ def html(report):
         summary+''.join(cards)+'<h2>ニュースから発見した関連銘柄（研究用）</h2>'+(''.join(discovery_cards) or '<p>保存済みの発見候補はありません。news_discovery.pyで企業情報の登録と候補探索を実行してください。</p>')+pretty(report['limitations'])+'</html>'
 
 
+def html(report):
+    from evening_summary import render
+    return render(report)
+
+
 def save(c,now=None,folder=None):
+    import time
+    start=time.perf_counter()
     report=build(c,now)
     root=Path(c['paths']['runtime']).parent/'reports'
     target=Path(folder) if folder else root/('evening_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f'))
@@ -191,6 +215,7 @@ def save(c,now=None,folder=None):
                 render_evening(r,report['status']['account'].get('fills',[]),target)
                 r['chart_image']=True
             except (ImportError,OSError,ValueError):r['chart_warning']='グラフ生成失敗。JSON・判断結果は保持'
+    report.setdefault('performance',{})['build_and_plot_seconds']=time.perf_counter()-start
     (target/'report.json').write_text(encode(report),encoding='utf-8')
     (target/'report.html').write_text(html(report),encoding='utf-8')
     return target,report

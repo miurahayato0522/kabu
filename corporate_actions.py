@@ -40,6 +40,7 @@ class ConfirmedActions:
     """Adapter boundary for future licensed corporate-action feeds."""
     def __init__(self,path):
         self.path=path
+        self.observations=Path(path).with_suffix('.observations.sqlite3')
 
     def between(self,symbol,previous_day,day,asof):
         import exchange_calendars as xcals
@@ -57,6 +58,15 @@ class ConfirmedActions:
                     raise ValueError('Corporate confirmation integrity mismatch')
                 if stamp(value['verified_at'])>asof or value['kind']=='unsupported':
                     raise ValueError(f'Corporate action unavailable/unsupported: {symbol} {target}')
+                if self.observations.is_file():
+                    from action_candidates import report
+                    for observation in report(self.observations):
+                        if observation['symbol']!=symbol_code(symbol):continue
+                        if stamp(observation['fetched_at'])>asof:continue
+                        for event in observation['events']:
+                            if event['observed_day']!=target:continue
+                            if event['kind']!=value['kind'] or event['factor']!=value['factor']:
+                                raise ValueError(f'Corporate observation conflict/unsupported: {symbol} {target}')
                 result.append(dict(value,id=row[0]))
         return result
 

@@ -25,14 +25,15 @@ def selected(rows,args):
     return sorted(out,key=lambda r:(-(r.get('rank',0)),r['article'].get('published_at') or '',r['symbol']))
 
 def summary(rows,c,now,limit=10):
+    from news_quality import classify,send_reason
     states=Counter(r['impact']['status'] for r in rows)
-    excluded=sum(bool(eligibility(r['article'],c,now)) or not r.get('relevance',{}).get('eligible',False) for r in rows)
+    excluded=sum(bool(eligibility(r['article'],c,now) or send_reason(r['article'],c,now)) or not r.get('relevance',{}).get('eligible',False) for r in rows)
     print(f"ニュース {len({r['article']['id'] for r in rows})}件 / 候補 {len(rows)}件 / 銘柄 {len({r['symbol'] for r in rows})}社")
     print(f"AI済 {states['ok']} / 待ち {states['pending']} / 除外・要確認 {excluded} / エラー {states['failed']} / 上位表示 {min(limit,len(rows))}")
     for r in rows[:limit]:
         a=r['article'];i=r['impact'];v=i.get('result') or {};rel=r.get('relevance',{})
         print(f"\n[{r['symbol']} {r['company']['name']}] {'既存監視' if r['watched'] else '新規候補'} | {i['status']} | {v.get('short','不明')}")
-        print(a['title']);print('公表: '+str(a.get('published_at'))+' / '+rel.get('label',r['relation']))
+        print(a['title']);print('公表: '+str(a.get('published_at'))+' / '+rel.get('label',r['relation'])+' / '+classify(a,c,now)['category'])
         print('候補状態: '+r['state']+' / '+str(eligibility(a,c,now) or r['review_reason']))
     print('注文なし。産業一致は影響の確定ではありません。詳細: --json')
 
@@ -52,11 +53,14 @@ def plan(c,now):
         cached=cache.get(key);event=cached[1] if cached and cached[0]=='ok' else None
         tags=[x['topic'] for x in event['industries']] if event else local_topics(a['title']+' '+a.get('body',''))
         found=discover(a,tags,index);eligible=[f for f in found[:s['max_candidates']] if f['relevance']['eligible']]
-        reason=eligibility(a,c,now)
+        from news_quality import send_reason
+        reason=eligibility(a,c,now) or send_reason(a,c,now)
+        if reason=='LOW_COMPANY_RELEVANCE' and a.get('quality',{}).get('category')=='macro':reason=None
         if not reason:
             if not cached or cached[0]=='pending':requests.append(payload);unknown=True
             if event:
                 for f in eligible:
+                    if a.get('quality',{}).get('category')=='macro' and not s['allow_indirect']:continue
                     p=request(a,c['llm'],s['periods'],event,f);k=digest([VERSION,a['id'],p])
                     if k not in cache or cache[k][0]=='pending':requests.append(p)
         articles.append(dict(id=a['id'],title=a['title'],url=a['url'],published_at=a.get('published_at'),
@@ -65,7 +69,7 @@ def plan(c,now):
     inp=sum(len(encode(p).encode('utf-8'))+4096 for p in requests);out=sum(p['max_output_tokens'] for p in requests)
     rates=budget.get('rates') if budget.get('rates_configured') else None
     cost=0.0 if not requests else ((inp*rates[0]+out*rates[1])/1e6 if rates else None)
-    return dict(model=c['llm'],articles=articles,known_uncached_requests=len(requests),max_calls=s['max_calls'],
+    return dict(model=c['llm'],articles=articles,dry_run=c['dry_run'],network_enabled=c['network_enabled'],known_uncached_requests=len(requests),max_calls=s['max_calls'],
         input_token_allowance=inp,output_token_limit=out,known_request_estimated_usd=cost,budget=budget,
         company_stage_estimate_pending=unknown,
         notice='入力はUTF-8バイト数+4096の予算予約用概算。実トークン数ではない。産業解析前の企業別入力・総費用は未確定。キャッシュ、除外、予算で実送信数は変わる。')

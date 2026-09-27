@@ -1,5 +1,29 @@
 # kabuステーション 株価収集基盤
 
+## ニュース品質・企業行動レビュー・簡潔な翌営業日レポート（2026-09-27）
+
+保存済みニュースを企業固有・業界・市場全体・参照/ノイズに分離し、静的ページ・古い記事・重複をAI送信前に保留します。翌営業日HTMLは短く表示し、全件の根拠と判断はJSONに保持します。企業行動はYahoo観測と確認済み台帳を分け、候補0件から自動で「なし」と確定しません。操作、1件限定の将来の有料試験、性能測定、制約は[ニュース品質・運用ガイド](docs/NEWS_QUALITY_OPERATIONS.md)を参照してください。
+
+```bat
+.\.venv\Scripts\python.exe news_quality.py status --config config/paper.json --limit 10
+.\.venv\Scripts\python.exe corporate_review.py status --config config/paper.json
+.\.venv\Scripts\python.exe kabu_system.py evening-report --config config/paper.json --output data/report_quality_check_YYYYMMDD
+```
+
+## 日足更新エラーと継続運転（2026-09-26）
+
+Yahooの9月25日終値欠損を10銘柄で再現しました。欠損は補完せず、銘柄別更新・部分成功・失敗段階と再試行予定を記録します。企業行動は観測候補と確認済台帳を分離し、安全停止を維持します。
+
+**運転中BotをCtrl+Cで停止してから**バックアップと日足更新を実行してください。現在の設定・DBを削除/初期化する必要はありません。
+
+```bat
+python operations_backup.py --config config/paper.json
+python kabu_system.py daily-refresh --config config/paper.json
+python kabu_system.py run-status --config config/paper.json
+```
+
+再起動、APIパスワードの安全な入力、9月28日の確認、隔離検証、企業行動の情報源と限界は[継続運転の手順](docs/RUNTIME_STABILITY.md)を参照してください。新しい実注文・有料AI解析はありません。
+
 ## 関連性・費用プレビュー・見やすい一覧
 
 ```bat

@@ -109,10 +109,19 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, ac
             previous_equity, previous_day = state['equity'], account.day
             if stamp(state['at']) >= now:
                 raise ValueError('Paper time must advance')
-        applied=[]
+        applied=[];corporate_blocks={}
         if actions is not None:
             for symbol in sorted(groups):
-                confirmations=actions.between(symbol,previous_day or prior,today,now)
+                try:
+                    confirmations=actions.between(symbol,previous_day or prior,today,now)
+                except (OSError,ValueError,sqlite3.Error) as exc:
+                    # A held security cannot be valued or carried safely without the
+                    # required action history.  An unheld one may be evaluated, but
+                    # is never opened until its own confirmation is complete.
+                    if account.positions.get(symbol,0):
+                        raise
+                    corporate_blocks[symbol]=str(exc)
+                    continue
                 for confirmation in confirmations:
                     account.split(symbol,confirmation['factor'],confirmation['day'])
                     applied.append(confirmation)
@@ -127,6 +136,10 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, ac
             account.limits = replace(account.limits, stop_new=True)
         for d in sorted(pending, key=lambda d:(d['action']!='SELL',d['prediction']['symbol'])):
             symbol = d['prediction']['symbol']
+            if d['action']=='BUY' and symbol in corporate_blocks:
+                # Do not carry a formerly eligible request across a later
+                # per-symbol corporate-action block.
+                continue
             if stamp(quotes[symbol]['at']) <= stamp(d['prediction']['at']):
                 keep.append(d)
                 continue
@@ -137,6 +150,9 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, ac
                 continue
             p = strategy.predict(histories[s], now.isoformat())
             d = decide(p, account.positions.get(s,0))
+            if s in corporate_blocks and d['action']=='BUY':
+                d['action']='NO_TRADE'
+                d['prediction']['reasons'].append('Corporate action unconfirmed for this symbol; new paper buy blocked')
             event_refs=sorted(r for r in p.refs if r.startswith('event:'))
             key=digest([s,histories[s][-1].day,strategy.name,event_refs,p.direction,p.error])
             if daily_once and key in decision_keys:
@@ -162,7 +178,7 @@ def step(path, bars, ticks_path, strategy, account, now=None, stop_new=False, ac
                         price=marks[s],unrealized=q*marks[s]-account.costs[s],
                         opened_at=opened.get(s),valued_at=now.isoformat()) for s,q in account.positions.items() if q}
         record = dict(at=now.isoformat(), mode='forward_saved_ticks_simulation', decisions=decisions,
-            new_buys_blocked=bool(stop_new),
+            new_buys_blocked=bool(stop_new),corporate_action_blocks=corporate_blocks,
             orders=account.orders[old_orders:], fills=account.fills[old_fills:], pending=keep,
             cash=account.cash, positions=account.positions, equity=value,
             realized=account.realized, unrealized=value-account.cash-sum(account.costs.values()),

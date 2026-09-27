@@ -58,7 +58,7 @@ class EveningTests(unittest.TestCase):
         self.assertEqual(r['results'][0]['decision']['action'],'BUY')
         self.assertEqual(r['results'][0]['ma5'],102)
         self.assertEqual(r['results'][0]['news']['status'],'NONE')
-        self.assertTrue(any('企業行動未確認' in x for x in r['status']['stop_new_reasons']))
+        self.assertTrue(any('未保有銘柄の企業行動未確認' in x for x in r['status']['warnings']))
         for path,content in before.items():self.assertEqual(path.read_bytes(),content)
         fixed=(target/'report.json').read_bytes()
         build(self.c,self.now+timedelta(hours=1))

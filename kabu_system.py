@@ -38,7 +38,7 @@ def news_store(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status','evening-report','analysis-preview','daily-refresh'])
+    p.add_argument('command',choices=['normalize','train','evaluate','compare','predict','paper-step','paper-report','run','run-status','evening-report','analysis-preview','daily-refresh','e2e-preflight','quote-check'])
     p.add_argument('--config',type=Path,default=ROOT/'config/paper.json')
     p.add_argument('--once',action='store_true',help='自動運転を1巡だけ実行')
     p.add_argument('--actions-db',type=Path,help='確認済み企業行動の台帳')
@@ -67,6 +67,7 @@ def main(argv=None):
     p.add_argument('--ticks-db',type=Path,default=ROOT/'data/production.sqlite3')
     p.add_argument('--ledger',type=Path,default=ROOT/'data/system_paper.sqlite3')
     p.add_argument('--stop-file',type=Path,default=ROOT/'data/STOP_NEW_TRADES')
+    p.add_argument('--json',action='store_true',help='machine-readable output for e2e-preflight')
     args = p.parse_args(argv)
     try:
         if args.command=='daily-refresh':
@@ -91,6 +92,18 @@ def main(argv=None):
             c=read_config(args.config)
             print(display(snapshot(c,datetime.now(timezone.utc))))
             return 0
+        if args.command=='e2e-preflight':
+            from system_runtime import read_config
+            from e2e_preflight import build,display
+            result=build(read_config(args.config),datetime.now(timezone.utc))
+            print(encode(result) if args.json else display(result))
+            return 0 if result['e2e_executable'] else 1
+        if args.command=='quote-check':
+            from system_runtime import read_config
+            from quote_check import check
+            result=check(read_config(args.config))
+            print(encode(result))
+            return 0 if result['status'] in ('PASS','WAITING_MARKET') else 1
         if args.command=='analysis-preview':
             from system_runtime import read_config
             from system_queue import preview

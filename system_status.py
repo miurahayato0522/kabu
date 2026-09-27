@@ -79,7 +79,11 @@ def snapshot(c,now):
     for symbol in c['symbols']:
         try:ConfirmedActions(c['paths']['actions']).between(symbol,acc.get('day') or calendar['previous_day'],check_day,now)
         except (OSError,ValueError,sqlite3.Error):action_errors.append(symbol)
-    if action_errors:stop.append('企業行動未確認のため仮想売買停止中: '+','.join(action_errors))
+    held_action_errors=[code for code in action_errors if acc.get('positions',{}).get(code+'0',0)]
+    if held_action_errors:
+        stop.append('保有銘柄の企業行動未確認のため仮想売買停止中: '+','.join(held_action_errors))
+    elif action_errors:
+        warnings.append('未保有銘柄の企業行動未確認: 新規paper buyを銘柄単位で停止中: '+','.join(action_errors))
     success=rows(c['paths']['runtime'],"SELECT max(at) AS at FROM logs WHERE status='ok'")
     prices=rows(c['paths']['prices'],'SELECT max(fetched_at) AS at,max(day) AS day FROM daily_prices')
     by_symbol=rows(c['paths']['prices'],'SELECT code,max(day) AS day,count(*) AS count FROM daily_prices GROUP BY code')
@@ -96,7 +100,7 @@ def snapshot(c,now):
         last_success=success[0]['at'] if success else None,jobs=jobs,logs=logs,
         daily_prices=prices[0] if prices else dict(at=None,day=None),daily_by_symbol=by_symbol,news_coverage=healthy,
         last_tick_received_at=ticks[0]['at'] if ticks else None,rss_queries=rss,
-        queue=queue,account=acc,errors=errors,warnings=warnings,stop_new_reasons=stop)
+        queue=queue,account=acc,corporate_action_unconfirmed=action_errors,errors=errors,warnings=warnings,stop_new_reasons=stop)
 
 
 def display(s):
